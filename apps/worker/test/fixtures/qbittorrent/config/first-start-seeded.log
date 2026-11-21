@@ -1,0 +1,5 @@
+LocalPeer: failed to listen on local socket. Error: QLocalServer::listen: Unknown error 22
+WebUI will be started shortly after internal preparations. Please wait...
+
+******** Information ********
+To control qBittorrent, access the WebUI at: http://localhost:8080

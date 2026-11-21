@@ -1,0 +1,10 @@
+#!/bin/sh
+# Format check on the staged files only, so a formatting slip fails here in
+# a second instead of at the end of `bun run ready`. Enable once per clone:
+#   git config core.hooksPath .githooks
+files=$(git diff --cached --name-only --diff-filter=ACMR -- '*.ts' '*.vue' '*.js' '*.json' '*.md' '*.css' '*.yml' '*.yaml')
+[ -z "$files" ] && exit 0
+echo "$files" | xargs bunx vp fmt --check --no-error-on-unmatched-pattern >/dev/null 2>&1 && exit 0
+echo "pre-commit: formatting is off in these staged files. Run bunx vp fmt on them, then git add:" >&2
+echo "$files" | xargs bunx vp fmt --list-different --no-error-on-unmatched-pattern >&2
+exit 1

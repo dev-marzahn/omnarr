@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<!-- Hand-written in the shape of Anime-Lists' anime-list.xml (no upstream
+     data is copied). Made-up titles and IDs, matching the TMDB fake.
+     Covers every <anime> and <mapping> attribute of the real file, type words
+     in tvdbid, tmdbseason="a", the ";1-1+2;" syntax, start/end/offset, and a
+     <before> node, which the sync doesn't read. -->
+<anime-list>
+  <anime anidbid="17001" tvdbid="7700002" defaulttvdbseason="1" episodeoffset="" tmdbtv="900002" tmdbseason="1" tmdboffset="" tmdbid="" imdbid="">
+    <name>Star Lantern</name>
+  </anime>
+  <anime anidbid="17002" tvdbid="7700002" defaulttvdbseason="1" episodeoffset="12" tmdbtv="900002" tmdbseason="2" tmdboffset="" tmdbid="" imdbid="">
+    <name>Star Lantern 2nd Season</name>
+  </anime>
+  <anime anidbid="17003" tvdbid="movie" defaulttvdbseason="" episodeoffset="" tmdbtv="" tmdbseason="" tmdbid="900201" imdbid="tt9900201">
+    <name>Star Lantern: The Movie</name>
+  </anime>
+  <anime anidbid="17004" tvdbid="7700004" defaulttvdbseason="a" episodeoffset="" tmdbtv="900004" tmdbseason="a" tmdboffset="0" tmdbid="" imdbid="">
+    <name>Endless Tide</name>
+    <mapping-list>
+      <mapping anidbseason="0" tvdbseason="0">;1-1+2;3-4;</mapping>
+      <mapping anidbseason="0" tmdbseason="0">;1-1;</mapping>
+    </mapping-list>
+  </anime>
+  <anime anidbid="17005" tvdbid="OVA" defaulttvdbseason="" episodeoffset="" tmdbtv="" tmdbseason="" tmdbid="" imdbid="">
+    <name>Paper Moon Harbour</name>
+  </anime>
+  <anime anidbid="17006" tvdbid="7700006" defaulttvdbseason="1" episodeoffset="0" tmdbtv="900006" tmdbseason="1" tmdboffset="0" tmdbid="" imdbid="">
+    <name>Glass Comet</name>
+    <mapping-list>
+      <mapping anidbseason="1" tvdbseason="2" start="13" end="24" offset="-12"/>
+      <mapping anidbseason="1" tmdbseason="2" start="13" end="24" offset="-12"/>
+      <mapping anidbseason="0" tmdbseason="0">;1-2;2-0;</mapping>
+    </mapping-list>
+    <before>;1-1;</before>
+  </anime>
+  <anime anidbid="17007" tvdbid="tv special" defaulttvdbseason="" episodeoffset="" tmdbtv="" tmdbseason="" tmdbid="" imdbid="">
+    <name>1984</name>
+  </anime>
+</anime-list>

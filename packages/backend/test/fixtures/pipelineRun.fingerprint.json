@@ -1,0 +1,13 @@
+{
+  "steps": [
+    "function:pipeline/steps:submitDownload",
+    "event:job:*",
+    "event:download:*",
+    "function:pipeline/steps:startImport",
+    "event:job:*",
+    "function:pipeline/steps:startPublish",
+    "event:job:*",
+    "function:pipeline/steps:finish"
+  ],
+  "sha256": "4b5c7183064e233673f899c4998ead97dec95b309eb2a7f7637b3ea58d8e445f"
+}

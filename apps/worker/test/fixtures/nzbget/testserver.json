@@ -1,0 +1,17 @@
+{
+  "ok": {
+    "version": "1.1",
+    "id": 1,
+    "result": ""
+  },
+  "authRejected": {
+    "version": "1.1",
+    "id": 1,
+    "result": "Authorization for test server (host.docker.internal) failed: 481 Authentication failed"
+  },
+  "unreachable": {
+    "version": "1.1",
+    "id": 1,
+    "result": "Connection to host.docker.internal failed: Error 111 - Connection refused"
+  }
+}

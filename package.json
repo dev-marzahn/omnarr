@@ -1,0 +1,75 @@
+{
+  "name": "omnarr-monorepo",
+  "private": true,
+  "license": "GPL-3.0-only",
+  "workspaces": [
+    "apps/*",
+    "packages/*",
+    "scripts",
+    "e2e",
+    "e2e/apps/*"
+  ],
+  "type": "module",
+  "scripts": {
+    "ready": "vp run -r build && vp check && vp run -r test",
+    "build": "vp run -r build",
+    "test": "vp run -r test",
+    "codegen": "node scripts/codegen.ts",
+    "auth:schema": "node scripts/auth-schema.ts",
+    "check-ports": "node scripts/check-ports.ts",
+    "smoke": "node scripts/smoke.ts",
+    "e2e": "node e2e/run.ts",
+    "collect-titles": "node scripts/collect-titles.ts"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "typescript": "catalog:",
+    "vite": "catalog:",
+    "vite-plus": "catalog:"
+  },
+  "overrides": {
+    "vite": "catalog:"
+  },
+  "devEngines": {
+    "packageManager": {
+      "name": "bun",
+      "version": "1.4.4",
+      "onFail": "download"
+    }
+  },
+  "engines": {
+    "node": ">=22.18.0"
+  },
+  "catalog": {
+    "@convex-dev/better-auth": "0.13.0",
+    "@ctrl/video-filename-parser": "5.13.1",
+    "@convex-dev/migrations": "^0.3.8",
+    "@convex-dev/workflow": "0.4.10",
+    "@convex-dev/workpool": "0.4.16",
+    "@dev-marzahn/convex-release": "100.2.1",
+    "@dev-marzahn/convex-workflow-migrations": "^100.0.0",
+    "@edge-runtime/vm": "5.0.0",
+    "@iconify-json/lucide": "1.2.149",
+    "@nuxt/ui": "^4.12.2",
+    "@types/node": "^26.6.6",
+    "auth": "1.7.25",
+    "better-auth": "1.7.25",
+    "convex": "^1.50.0",
+    "convex-helpers": "^0.1.135",
+    "convex-test": "^0.0.69",
+    "cheerio": "1.2.0",
+    "css-select": "7.0.0",
+    "domhandler": "5.0.3",
+    "fast-xml-parser": "5.12.1",
+    "fflate": "0.8.3",
+    "htmlparser2": "12.0.0",
+    "nuxt": "^4.6.4",
+    "tailwindcss": "^4.3.5",
+    "typescript": "^7.0.2",
+    "vite": "npm:@voidzero-dev/vite-plus-core@1.6.0",
+    "vite-plus": "1.6.0",
+    "vue": "^3.5.22",
+    "yaml": "^2.9.1",
+    "zod": "^4.6.7"
+  }
+}

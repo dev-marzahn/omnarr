@@ -1,0 +1,30 @@
+{
+  "version": "1.1",
+  "id": 1,
+  "result": [
+    {
+      "Name": "ControlUsername",
+      "Value": "omnarr"
+    },
+    {
+      "Name": "ControlPassword",
+      "Value": "fixture-control-password"
+    },
+    {
+      "Name": "ControlIP",
+      "Value": "0.0.0.0"
+    },
+    {
+      "Name": "ControlPort",
+      "Value": "6789"
+    },
+    {
+      "Name": "RestrictedUsername",
+      "Value": ""
+    },
+    {
+      "Name": "AddUsername",
+      "Value": ""
+    }
+  ]
+}

@@ -1,0 +1,97 @@
+# The vpn scenario's network, in both of its layouts: a test WireGuard
+# server, a test OpenVPN server and the web seed behind them. Merged over
+# the root compose.yml and compose.test.yml from the scenario's start, so
+# the networks stay the same when the root compose.vpn.yml joins them. The fakes' folder is E2E_FAKES (compose.test.yml).
+#
+#   default (E2E_VPN_NEAR.0/24)  gluetun, the worker, the backend, the fakes;
+#                                the WireGuard server (.200) and the OpenVPN
+#                                server (.201) at fixed IPs, since gluetun's
+#                                custom configs need an IP endpoint
+#   far (E2E_VPN_FAR.0/24)       internal: both servers and the web seed at
+#                                .210, reachable only through a tunnel
+#
+# The two /24s are per compose project (e2e/stack.ts derives them from
+# E2E_PROJECT, in 10.213.0.0/16), so two vpn runs can share a Docker host.
+#
+# Each server forwards its peers' traffic to `far` only (the WireGuard one by a
+# FORWARD rule e2e/stack.ts adds after every start, the OpenVPN one by its
+# script), so nothing in the tunnel reaches the internet, as the `swarm`
+# network keeps qBittorrent's DHT inside the test.
+services:
+  wgserver:
+    profiles: [test]
+    image: linuxserver/wireguard:1.0.20260223-r0-ls129@sha256:236f9a9a89c701bc83f6d41007157dc77361114d14e56a08e846bb4499622e97
+    cap_add: [NET_ADMIN]
+    environment:
+      PEERS: '1'
+      SERVERURL: ${E2E_VPN_NEAR:?}.200
+      SERVERPORT: '51820'
+      INTERNAL_SUBNET: 10.13.13.0
+      ALLOWEDIPS: 0.0.0.0/0
+    sysctls:
+      net.ipv4.conf.all.src_valid_mark: '1'
+    networks:
+      default: { ipv4_address: '${E2E_VPN_NEAR:?}.200' }
+      far: { ipv4_address: '${E2E_VPN_FAR:?}.200' }
+
+  # A test OpenVPN server beside it: its PKI and client config from a one-shot
+  # container, then OpenVPN 2.6 from the pinned gluetun image with its own entrypoint (fakes/openvpn/).
+  ovpnpki:
+    profiles: [test]
+    image: nzbgetcom/nzbget:v26.3@sha256:f451d98066cbc0c108146420a61a60f7638de50e067738951461e0105eeaa56d
+    entrypoint: ['sh', '/fakes/openvpn/pki.sh']
+    environment:
+      OVPN_SERVER_IP: ${E2E_VPN_NEAR:?}.201
+    volumes:
+      - ${E2E_FAKES:?}:/fakes:ro
+      - ovpn:/ovpn
+    network_mode: none
+  ovpnserver:
+    profiles: [test]
+    image: qmcgaw/gluetun:v3.41.3@sha256:fa19cc76b2af13d57a8d3dc3066f2ada061b1c761b8aecf989b3877c0486e027
+    entrypoint: ['sh', '/fakes/openvpn/server.sh']
+    environment:
+      OVPN_FAR_SUBNET: ${E2E_VPN_FAR:?}.0/24
+    # The image's own check asks gluetun's health server, which doesn't run here.
+    healthcheck:
+      test: ['CMD', 'ip', 'link', 'show', 'tun0']
+      interval: 1s
+      start_period: 5s
+    cap_add: [NET_ADMIN]
+    devices: [/dev/net/tun]
+    sysctls:
+      net.ipv4.ip_forward: '1'
+    volumes:
+      - ${E2E_FAKES:?}:/fakes:ro
+      - ovpn:/ovpn:ro
+    networks:
+      default: { ipv4_address: '${E2E_VPN_NEAR:?}.201' }
+      far: { ipv4_address: '${E2E_VPN_FAR:?}.201' }
+    depends_on:
+      ovpnpki: { condition: service_completed_successfully }
+
+  # The same web seed, also behind the tunnel, with the DNS answer gluetun asks for there (fakes/webseed/dns.ts).
+  webseed:
+    environment:
+      WEBSEED_DNS_ANSWER: ${E2E_VPN_FAR:?}.210
+    networks:
+      swarm: {}
+      far: { ipv4_address: '${E2E_VPN_FAR:?}.210' }
+
+  # The vpn scenario's two torrents, whose web seed and tracker are the address behind the tunnel.
+  torznab:
+    environment:
+      NEWZNAB_CATALOGUE: vpn
+      WEBSEED_HOST: ${E2E_VPN_FAR:?}.210:4130
+
+volumes:
+  ovpn: {}
+
+networks:
+  default:
+    ipam:
+      config: [{ subnet: '${E2E_VPN_NEAR:?}.0/24' }]
+  far:
+    internal: true
+    ipam:
+      config: [{ subnet: '${E2E_VPN_FAR:?}.0/24' }]

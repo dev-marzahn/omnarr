@@ -1,0 +1,68 @@
+<rss xmlns:atom="http://www.w3.org/2005/Atom" xmlns:nyaa="https://nyaa.si/xmlns/nyaa" version="2.0">
+	<channel>
+		<title>Nyaa - &#34;Harbour Lights&#34; - Magnet URI RSS</title>
+		<description>RSS Feed for &#34;Harbour Lights&#34;</description>
+		<link>https://nyaa.si/</link>
+		<atom:link href="https://nyaa.si/?page=rss" rel="self" type="application/rss+xml" />
+		<item>
+			<title>[GroupA] Harbour Lights - 1071 (1080p) [ABCD1234].mkv</title>
+				<link>magnet:?xt=urn:btih:0a1b2c3d4e5f60718293a4b5c6d7e8f901234567&amp;dn=%5BGroupA%5D%20Harbour%20Lights%20-%201071&amp;tr=http%3A%2F%2Ftracker.example%3A7777%2Fannounce</link>
+				<guid isPermaLink="true">https://nyaa.si/view/1900201</guid>
+				<pubDate>Tue, 11 Nov 2025 18:40:00 -0000</pubDate>
+
+				<nyaa:seeders>120</nyaa:seeders>
+				<nyaa:leechers>8</nyaa:leechers>
+				<nyaa:downloads>3400</nyaa:downloads>
+				<nyaa:infoHash>0a1b2c3d4e5f60718293a4b5c6d7e8f901234567</nyaa:infoHash>
+			<nyaa:categoryId>1_2</nyaa:categoryId>
+			<nyaa:category>Anime - English-translated</nyaa:category>
+			<nyaa:size>1.4 GiB</nyaa:size>
+			<nyaa:comments>0</nyaa:comments>
+			<nyaa:trusted>Yes</nyaa:trusted>
+			<nyaa:remake>No</nyaa:remake>
+			<description><![CDATA[<a href="https://nyaa.si/view/1900201">#1900201 | [GroupA] Harbour Lights - 1071 (1080p) [ABCD1234].mkv</a> | 1.4 GiB | Anime - English-translated | 0A1B2C3D4E5F60718293A4B5C6D7E8F901234567]]></description>
+		</item>
+		<item>
+			<title>[GroupB] Harbour Lights S2 - 02v2 (720p) [Tom &amp; Jerry&#39;s cut]</title>
+				<link>magnet:?xt=urn:btih:BBBB1111CCCC2222DDDD3333EEEE4444FFFF6666&amp;dn=%5BGroupB%5D</link>
+				<guid isPermaLink="true">https://nyaa.si/view/1900200</guid>
+				<pubDate>Mon, 10 Nov 2025 18:40:00 -0000</pubDate>
+
+				<nyaa:seeders>45</nyaa:seeders>
+				<nyaa:leechers>0</nyaa:leechers>
+				<nyaa:downloads>900</nyaa:downloads>
+				<nyaa:infoHash>BBBB1111CCCC2222DDDD3333EEEE4444FFFF6666</nyaa:infoHash>
+			<nyaa:categoryId>1_2</nyaa:categoryId>
+			<nyaa:category>Anime - English-translated</nyaa:category>
+			<nyaa:size>350.5 MiB</nyaa:size>
+			<nyaa:comments>2</nyaa:comments>
+			<nyaa:trusted>No</nyaa:trusted>
+			<nyaa:remake>No</nyaa:remake>
+			<description><![CDATA[<a href="https://nyaa.si/view/1900200">#1900200 | [GroupB] Harbour Lights S2 - 02v2 (720p)</a>]]></description>
+		</item>
+		<item>
+			<title>[GroupC] Harbour Lights - 01 [no hash]</title>
+				<link>magnet:?xt=urn:btih:cccc1111dddd2222eeee3333ffff4444aaaa7777</link>
+				<guid isPermaLink="true">https://nyaa.si/view/1900199</guid>
+				<pubDate>Sun, 09 Nov 2025 18:40:00 -0000</pubDate>
+
+				<nyaa:seeders>3</nyaa:seeders>
+				<nyaa:leechers>1</nyaa:leechers>
+				<nyaa:downloads>20</nyaa:downloads>
+				<nyaa:infoHash>not-a-hash</nyaa:infoHash>
+			<nyaa:size>2.0 GiB</nyaa:size>
+		</item>
+		<item>
+			<title>[GroupD] Harbour Lights - 01 [torrent link]</title>
+				<link>https://nyaa.si/download/1900198.torrent</link>
+				<guid isPermaLink="true">https://nyaa.si/view/1900198</guid>
+				<pubDate>Sat, 08 Nov 2025 18:40:00 -0000</pubDate>
+
+				<nyaa:seeders>5</nyaa:seeders>
+				<nyaa:leechers>0</nyaa:leechers>
+				<nyaa:downloads>7</nyaa:downloads>
+				<nyaa:infoHash>dddd1111eeee2222ffff3333aaaa4444bbbb8888</nyaa:infoHash>
+			<nyaa:size>1.0 GiB</nyaa:size>
+		</item>
+	</channel>
+</rss>

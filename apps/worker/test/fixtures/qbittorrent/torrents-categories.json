@@ -1,0 +1,22 @@
+{
+  "platform-movies": {
+    "download_path": null,
+    "inactive_seeding_time_limit": -2,
+    "name": "platform-movies",
+    "ratio_limit": -2,
+    "savePath": "/data/downloads/torrents/platform-movies",
+    "seeding_time_limit": -2,
+    "share_limit_action": "Default",
+    "share_limits_mode": "Default"
+  },
+  "platform-series": {
+    "download_path": null,
+    "inactive_seeding_time_limit": -2,
+    "name": "platform-series",
+    "ratio_limit": -2,
+    "savePath": "/data/downloads/torrents/platform-series",
+    "seeding_time_limit": -2,
+    "share_limit_action": "Default",
+    "share_limits_mode": "Default"
+  }
+}

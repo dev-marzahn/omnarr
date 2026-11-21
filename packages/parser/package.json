@@ -1,0 +1,20 @@
+{
+  "name": "@omnarr/parser",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "vp test"
+  },
+  "dependencies": {
+    "@ctrl/video-filename-parser": "catalog:",
+    "@omnarr/contracts": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "vite-plus": "catalog:",
+    "zod": "catalog:"
+  }
+}

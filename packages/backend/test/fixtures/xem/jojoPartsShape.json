@@ -1,0 +1,32 @@
+{
+  "result": "success",
+  "data": [
+    { "scene": { "season": 1, "episode": 1, "absolute": 1 }, "tvdb": { "season": 1, "episode": 1, "absolute": 1 } },
+    { "scene": { "season": 1, "episode": 2, "absolute": 2 }, "tvdb": { "season": 1, "episode": 2, "absolute": 2 } },
+    { "scene": { "season": 1, "episode": 3, "absolute": 3 }, "tvdb": { "season": 1, "episode": 3, "absolute": 3 } },
+    { "scene": { "season": 1, "episode": 4, "absolute": 4 }, "tvdb": { "season": 1, "episode": 4, "absolute": 4 } },
+    { "scene": { "season": 1, "episode": 5, "absolute": 5 }, "tvdb": { "season": 1, "episode": 5, "absolute": 5 } },
+    { "scene": { "season": 1, "episode": 6, "absolute": 6 }, "tvdb": { "season": 1, "episode": 6, "absolute": 6 } },
+    { "scene": { "season": 2, "episode": 1, "absolute": 1 }, "tvdb": { "season": 2, "episode": 1, "absolute": 7 } },
+    { "scene": { "season": 2, "episode": 2, "absolute": 2 }, "tvdb": { "season": 2, "episode": 2, "absolute": 8 } },
+    { "scene": { "season": 2, "episode": 3, "absolute": 3 }, "tvdb": { "season": 2, "episode": 3, "absolute": 9 } },
+    { "scene": { "season": 3, "episode": 1, "absolute": 1 }, "tvdb": { "season": 3, "episode": 1, "absolute": 10 } },
+    { "scene": { "season": 3, "episode": 2, "absolute": 2 }, "tvdb": { "season": 3, "episode": 2, "absolute": 11 } },
+    { "scene": { "season": 3, "episode": 3, "absolute": 3 }, "tvdb": { "season": 3, "episode": 3, "absolute": 12 } },
+    { "scene": { "season": 3, "episode": 4, "absolute": 4 }, "tvdb": { "season": 3, "episode": 4, "absolute": 13 } },
+    { "scene": { "season": 3, "episode": 5, "absolute": 5 }, "tvdb": { "season": 3, "episode": 5, "absolute": 14 } },
+    { "scene": { "season": 4, "episode": 1, "absolute": 1 }, "tvdb": { "season": 4, "episode": 1, "absolute": 15 } },
+    { "scene": { "season": 4, "episode": 2, "absolute": 2 }, "tvdb": { "season": 4, "episode": 2, "absolute": 16 } },
+    { "scene": { "season": 4, "episode": 3, "absolute": 3 }, "tvdb": { "season": 4, "episode": 3, "absolute": 17 } },
+    { "scene": { "season": 5, "episode": 1, "absolute": 1 }, "tvdb": { "season": 5, "episode": 1, "absolute": 18 } },
+    { "scene": { "season": 5, "episode": 2, "absolute": 2 }, "tvdb": { "season": 5, "episode": 2, "absolute": 19 } },
+    { "scene": { "season": 5, "episode": 3, "absolute": 3 }, "tvdb": { "season": 5, "episode": 3, "absolute": 20 } },
+    { "scene": { "season": 5, "episode": 4, "absolute": 4 }, "tvdb": { "season": 5, "episode": 4, "absolute": 21 } },
+    { "scene": { "season": 5, "episode": 5, "absolute": 5 }, "tvdb": { "season": 5, "episode": 5, "absolute": 22 } },
+    { "scene": { "season": 5, "episode": 6, "absolute": 6 }, "tvdb": { "season": 5, "episode": 6, "absolute": 23 } },
+    { "scene": { "season": 6, "episode": 1, "absolute": 1 }, "tvdb": { "season": 6, "episode": 1, "absolute": 24 } },
+    { "scene": { "season": 6, "episode": 2, "absolute": 2 }, "tvdb": { "season": 6, "episode": 2, "absolute": 25 } },
+    { "scene": { "season": 6, "episode": 3, "absolute": 3 }, "tvdb": { "season": 6, "episode": 3, "absolute": 26 } }
+  ],
+  "message": "full mapping for 7700009 on tvdb. this was a cached version"
+}

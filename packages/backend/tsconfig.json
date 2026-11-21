@@ -1,0 +1,10 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2023", "dom"],
+    "types": ["vite/client", "node"]
+  },
+  "include": ["test", "image", "*.ts"]
+}

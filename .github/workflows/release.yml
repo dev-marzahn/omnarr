@@ -1,0 +1,180 @@
+# The release workflow, run by hand with a version, `0.1.0-p1`
+# style for a pre-release:
+#
+#   1. Build   the three images for amd64 and arm64, pushed by digest only
+#   2. Test    the stackUpgrade e2e from the previous GitHub release to these
+#              digests; skipped when no release exists yet. A failure stops
+#              the release before any tag points at the images.
+#   3. Pin     tag the images, write their digests into compose.yml, commit
+#              "Release <version>" to main and tag v<version>
+#   4. Release the GitHub release with compose.yml, compose.vpn.yml and .env.example
+#
+# The built-in TMDB token is the repository secret TMDB_TOKEN, passed to the
+# backend image as the `tmdb_token` build secret.
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: The release version, without the v (0.1.0-p1 for a pre-release)
+        required: true
+
+permissions:
+  contents: write
+  packages: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ghcr.io/dev-marzahn
+  VERSION: ${{ inputs.version }}
+
+jobs:
+  build:
+    name: Build ${{ matrix.image }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - image: omnarr-backend
+            dockerfile: packages/backend/Dockerfile
+          - image: omnarr-worker
+            dockerfile: apps/worker/Dockerfile
+          - image: omnarr-web
+            dockerfile: apps/web/Dockerfile
+    outputs:
+      omnarr-backend: ${{ steps.digest.outputs.omnarr-backend }}
+      omnarr-worker: ${{ steps.digest.outputs.omnarr-worker }}
+      omnarr-web: ${{ steps.digest.outputs.omnarr-web }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3.7.0
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      # By digest only: no tag points at the images until step 3.
+      - id: build
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          platforms: linux/amd64,linux/arm64
+          build-args: OMNARR_VERSION=${{ env.VERSION }}
+          secrets: tmdb_token=${{ secrets.TMDB_TOKEN }}
+          outputs: type=image,name=${{ env.REGISTRY }}/${{ matrix.image }},push-by-digest=true,name-canonical=true,push=true
+      - id: digest
+        run: echo "${{ matrix.image }}=${{ steps.build.outputs.digest }}" >> "$GITHUB_OUTPUT"
+
+  # Step 2: the previous release's compose files and images, then these digests.
+  test:
+    name: Upgrade test
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.4
+      - run: bun install --frozen-lockfile
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: The newest release before this one
+        id: from
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          from=$(gh release list --limit 100 --json tagName --jq '.[].tagName' | grep -vx "v$VERSION" | head -n 1 | sed 's/^v//')
+          echo "version=$from" >> "$GITHUB_OUTPUT"
+          if [ -z "$from" ]; then echo "No release yet: the upgrade test is skipped."; fi
+      - name: stackUpgrade
+        if: steps.from.outputs.version != ''
+        env:
+          E2E_FROM_VERSION: ${{ steps.from.outputs.version }}
+          E2E_TO_VERSION: ${{ env.VERSION }}
+          E2E_TO_BACKEND_IMAGE: ${{ env.REGISTRY }}/omnarr-backend@${{ needs.build.outputs.omnarr-backend }}
+          E2E_TO_WORKER_IMAGE: ${{ env.REGISTRY }}/omnarr-worker@${{ needs.build.outputs.omnarr-worker }}
+          E2E_TO_WEB_IMAGE: ${{ env.REGISTRY }}/omnarr-web@${{ needs.build.outputs.omnarr-web }}
+        run: node e2e/run.ts stackUpgrade
+
+  release:
+    name: Pin and release
+    needs: [build, test]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          # The previous release's tag, for the notes' changed pins.
+          fetch-depth: 0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.4
+      - run: bun install --frozen-lockfile
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Tag the images
+        env:
+          BACKEND: ${{ needs.build.outputs.omnarr-backend }}
+          WORKER: ${{ needs.build.outputs.omnarr-worker }}
+          WEB: ${{ needs.build.outputs.omnarr-web }}
+        run: |
+          docker buildx imagetools create -t "$REGISTRY/omnarr-backend:$VERSION" "$REGISTRY/omnarr-backend@$BACKEND"
+          docker buildx imagetools create -t "$REGISTRY/omnarr-worker:$VERSION" "$REGISTRY/omnarr-worker@$WORKER"
+          docker buildx imagetools create -t "$REGISTRY/omnarr-web:$VERSION" "$REGISTRY/omnarr-web@$WEB"
+          printf '{"omnarr-backend":"%s","omnarr-worker":"%s","omnarr-web":"%s"}\n' "$BACKEND" "$WORKER" "$WEB" > "$RUNNER_TEMP/digests.json"
+      - name: Pin compose.yml
+        run: |
+          node scripts/pin-images.ts --version "$VERSION" --digests "$RUNNER_TEMP/digests.json"
+          node scripts/check-ports.ts
+      - name: Commit and tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "Release $VERSION"
+          git tag "v$VERSION"
+          git push origin main "v$VERSION"
+      - name: Create the GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          WORKER: ${{ needs.build.outputs.omnarr-worker }}
+        run: |
+          prerelease=""
+          case "$VERSION" in *-*) prerelease="--prerelease" ;; esac
+          previous=$(git describe --tags --abbrev=0 HEAD~1 2>/dev/null || true)
+          notes="$RUNNER_TEMP/notes.md"
+          : > "$notes"
+          # A raised Jellyfin major version can't be rolled back: the notes open by asking for its config backup.
+          major() { grep -o 'jellyfin/jellyfin:[0-9]*' | head -n 1 | cut -d: -f2; }
+          if [ -n "$previous" ] && [ "$(git show "$previous:compose.yml" | major)" != "$(major < compose.yml)" ]; then
+            echo "**This release raises Jellyfin's major version. Back up the Jellyfin config volume before you upgrade** (docs/install.md, Backups)." >> "$notes"
+            echo >> "$notes"
+          fi
+          # Every pin that changed since the previous release.
+          echo "Pins:" >> "$notes"
+          git diff --unified=0 ${previous:-HEAD~1} -- compose.yml compose.vpn.yml | grep '^+ *image:' | sed 's/^+ *image: */- /' | sort -u >> "$notes"
+          # The worker's ffmpeg configure line and Debian package versions, for the source offer.
+          image="$REGISTRY/omnarr-worker@$WORKER"
+          { echo; echo "ffmpeg in the worker image:"; echo '```'; docker run --rm --entrypoint cat "$image" /licenses/ffmpeg-configure.txt; echo '```'
+            echo; echo "<details><summary>The worker image's Debian packages</summary>"; echo; echo '```'
+            docker run --rm --entrypoint cat "$image" /licenses/packages.txt; echo '```'; echo "</details>"; } >> "$notes"
+          gh release create "v$VERSION" compose.yml compose.vpn.yml .env.example $prerelease --title "omnarr $VERSION" --notes-file "$RUNNER_TEMP/notes.md"

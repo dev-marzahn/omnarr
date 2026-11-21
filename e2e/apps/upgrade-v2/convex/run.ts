@@ -1,0 +1,62 @@
+// Release 2 of the upgrade fixture: `notify` is new, between the
+// first step and the wait, so a run from release 1 that waits on `go` needs
+// the migration below to replay. `last` takes notify's time, as an optional
+// argument (arguments of a step that may be queued only gain optional
+// fields).
+import { migration, sendEvent, WorkflowManager, vWorkflowId } from '@dev-marzahn/convex-workflow-migrations';
+import { v } from 'convex/values';
+
+import { components, internal } from './_generated/api';
+import { internalMutation, internalQuery } from './_generated/server';
+
+export const workflow = new WorkflowManager(components.workflow, {
+  migrationsComponent: components.workflowMigrations,
+  onPause: (_ctx, info) => console.error(`paused (${info.reason}): ${info.detail}`),
+});
+
+export const first = internalMutation({ args: {}, returns: v.object({ release: v.number() }), handler: () => ({ release: 2 }) });
+
+export const notify = internalMutation({
+  args: {},
+  returns: v.object({ at: v.union(v.number(), v.null()) }),
+  handler: (): { at: number | null } => ({ at: Date.now() }),
+});
+
+export const last = internalMutation({
+  args: { notifiedAt: v.optional(v.union(v.number(), v.null())) },
+  returns: v.object({ release: v.number(), notifiedAt: v.union(v.number(), v.null()) }),
+  handler: (_ctx, { notifiedAt }) => ({ release: 2, notifiedAt: notifiedAt ?? null }),
+});
+
+export const run = workflow.define({
+  args: {},
+  migrations: [
+    // Release 2 added notify after first. Runs already past first count as notified, at no known time.
+    migration('notify-after-first', (h) => h.insertAfter(internal.run.first, internal.run.notify, { result: { at: null } })),
+  ],
+  returns: v.any(),
+  handler: async (step): Promise<unknown> => {
+    const started = await step.runMutation(internal.run.first, {});
+    const { at } = await step.runMutation(internal.run.notify, {});
+    await step.awaitEvent({ name: 'go' });
+    const ended = await step.runMutation(internal.run.last, { notifiedAt: at });
+    return { started, ended };
+  },
+});
+
+export const start = internalMutation({ args: {}, returns: v.string(), handler: (ctx): Promise<string> => workflow.start(ctx, internal.run.run, {}) });
+
+export const send = internalMutation({
+  args: { workflowId: vWorkflowId },
+  returns: v.null(),
+  handler: async (ctx, { workflowId }) => {
+    await sendEvent(ctx, components.workflow, { workflowId, name: 'go', value: null });
+    return null;
+  },
+});
+
+export const status = internalQuery({
+  args: { workflowId: vWorkflowId },
+  returns: v.any(),
+  handler: (ctx, { workflowId }) => workflow.status(ctx, workflowId),
+});

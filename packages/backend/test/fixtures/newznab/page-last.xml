@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Hand-written. Made-up titles; the key in the URLs is a planted fake value. -->
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom" xmlns:newznab="http://www.newznab.com/DTD/2010/feeds/attributes/">
+  <channel>
+    <title>Example Indexer</title>
+    <description>Example Indexer API results</description>
+    <newznab:response offset="100" total="102"/>
+    <item>
+      <title>The.Long.Harbor.S01E02.1080p.WEB-DL.DDP5.1.H.264-GRPA</title>
+      <guid isPermaLink="true">https://indexer.example/details/0a1b2c3d</guid>
+      <link>https://indexer.example/getnzb/0a1b2c3d.nzb&amp;i=1&amp;r=planted-newznab-key</link>
+      <pubDate>Tue, 10 Nov 2026 18:30:00 +0000</pubDate>
+      <category>TV &gt; HD</category>
+      <enclosure url="https://indexer.example/getnzb/0a1b2c3d.nzb&amp;i=1&amp;r=planted-newznab-key" length="1500000000" type="application/x-nzb"/>
+      <newznab:attr name="category" value="5000"/>
+      <newznab:attr name="category" value="5040"/>
+      <newznab:attr name="size" value="1499999999"/>
+      <newznab:attr name="tvdbid" value="7700001"/>
+      <newznab:attr name="imdb" value="9900001"/>
+    </item>
+    <item>
+      <title>Quiet Orchard 2024 2160p WEB-DL DDP5.1 HDR10 H.265-GRPB</title>
+      <guid isPermaLink="false">5e6f7a8b</guid>
+      <pubDate>Mon, 09 Nov 2026 07:05:00 +0000</pubDate>
+      <enclosure url="https://indexer.example/getnzb/5e6f7a8b.nzb&amp;i=1&amp;r=planted-newznab-key" type="application/x-nzb"/>
+      <newznab:attr name="category" value="2045"/>
+      <newznab:attr name="size" value="8000000000"/>
+      <newznab:attr name="imdbid" value="tt9900101"/>
+      <newznab:attr name="tmdbid" value="900101"/>
+    </item>
+  </channel>
+</rss>

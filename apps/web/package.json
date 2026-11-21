@@ -1,0 +1,27 @@
+{
+  "name": "@omnarr/web",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "nuxt build",
+    "dev": "nuxt dev",
+    "prepare:types": "nuxt prepare",
+    "test": "vp test"
+  },
+  "dependencies": {
+    "@convex-dev/better-auth": "catalog:",
+    "@iconify-json/lucide": "catalog:",
+    "@nuxt/ui": "catalog:",
+    "@omnarr/backend": "workspace:*",
+    "@omnarr/contracts": "workspace:*",
+    "better-auth": "catalog:",
+    "convex": "catalog:",
+    "nuxt": "catalog:",
+    "tailwindcss": "catalog:",
+    "vue": "catalog:"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "vite-plus": "catalog:"
+  }
+}

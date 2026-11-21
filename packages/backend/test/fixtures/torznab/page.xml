@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Hand-written, in the shape Jackett and Prowlarr answer a Torznab search. Made-up titles; the passkey is a planted fake value. -->
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom" xmlns:torznab="http://torznab.com/schemas/2015/feed">
+  <channel>
+    <title>Example Tracker</title>
+    <item>
+      <title>The.Long.Harbor.S01E03.1080p.WEB-DL.DDP5.1.H.264-GRPA</title>
+      <guid>https://tracker.example/details/42</guid>
+      <link>https://tracker.example/dl/42?passkey=planted-torznab-passkey</link>
+      <pubDate>Tue, 10 Nov 2026 18:30:00 +0000</pubDate>
+      <enclosure url="https://tracker.example/dl/42?passkey=planted-torznab-passkey" length="1500000000" type="application/x-bittorrent"/>
+      <torznab:attr name="category" value="5040"/>
+      <torznab:attr name="tvdbid" value="7700001"/>
+      <torznab:attr name="seeders" value="12"/>
+      <torznab:attr name="peers" value="15"/>
+      <torznab:attr name="infohash" value="C12FE1C06BBA254A9DC9F519B335AA7C1367A88A"/>
+      <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:C12FE1C06BBA254A9DC9F519B335AA7C1367A88A&amp;dn=The.Long.Harbor&amp;tr=https%3A%2F%2Ftracker.example%2Fannounce%3Fpasskey%3Dplanted-torznab-passkey"/>
+      <torznab:attr name="minimumratio" value="1.0"/>
+      <torznab:attr name="minimumseedtime" value="259200"/>
+      <torznab:attr name="downloadvolumefactor" value="0"/>
+    </item>
+    <item>
+      <title>Quiet.Orchard.2024.1080p.WEB-DL.DDP5.1.H.264-GRPB</title>
+      <guid>https://tracker.example/details/43</guid>
+      <pubDate>Mon, 09 Nov 2026 07:05:00 +0000</pubDate>
+      <enclosure url="https://tracker.example/dl/43?passkey=planted-torznab-passkey" length="6000000000" type="application/x-bittorrent"/>
+      <torznab:attr name="category" value="2040"/>
+      <torznab:attr name="imdb" value="9900101"/>
+      <torznab:attr name="seeders" value="0"/>
+      <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:ABCDEFGHIJKLMNOPQRSTUVWXYZ234567&amp;dn=Quiet.Orchard"/>
+    </item>
+  </channel>
+</rss>

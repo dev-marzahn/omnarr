@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Hand-written. Torznab items that link only a magnet, as public trackers do: a v1 magnet with a tracker passkey, and a v2-only one (btmh). -->
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom" xmlns:torznab="http://torznab.com/schemas/2015/feed">
+  <channel>
+    <title>Example Public Tracker</title>
+    <torznab:response offset="0" total="2"/>
+    <item>
+      <title>The.Long.Harbor.S01E04.1080p.WEB-DL.DDP5.1.H.264-GRPA</title>
+      <guid>public-44</guid>
+      <link>magnet:?xt=urn:btih:0123456789ABCDEF0123456789ABCDEF01234567&amp;dn=The.Long.Harbor.S01E04&amp;tr=udp%3A%2F%2Ftracker.example%3A1337%2Fplanted-torznab-passkey%2Fannounce</link>
+      <pubDate>Wed, 11 Nov 2026 18:30:00 +0000</pubDate>
+      <size>1400000000</size>
+      <torznab:attr name="category" value="5040"/>
+      <torznab:attr name="seeders" value="3"/>
+      <torznab:attr name="peers" value="4"/>
+    </item>
+    <item>
+      <title>The.Long.Harbor.S01E05.1080p.WEB-DL.DDP5.1.H.264-GRPA</title>
+      <guid>public-45</guid>
+      <enclosure url="magnet:?xt=urn:btmh:1220abababababababababababababababababababababababababababababababab&amp;dn=The.Long.Harbor.S01E05" length="1400000000" type="application/x-bittorrent"/>
+      <pubDate>Thu, 12 Nov 2026 18:30:00 +0000</pubDate>
+      <torznab:attr name="category" value="5040"/>
+      <torznab:attr name="seeders" value="5"/>
+    </item>
+  </channel>
+</rss>

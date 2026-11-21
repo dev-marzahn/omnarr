@@ -1,0 +1,19 @@
+# The vpn scenario's test-only gluetun settings, merged with compose.vpn.yml.
+# Behind the test VPN servers there is no internet, so gluetun's
+# own checks point at the web seed instead of cloudflare.com and 1.1.1.1, its
+# exit-IP lookup asks the web seed's echoip answer (the worker counts the VPN
+# up only with an exit IP), and its version
+# check is off. Its DNS server is off and its plain DNS is the web seed's
+# responder (fakes/webseed/dns.ts): without an answer, gluetun spent about
+# 105 s on DNS before every exit-IP lookup. Gluetun's health-check periods are
+# constants in v3.41.3 (a small check every minute with 120 s of retries), so
+# there is nothing to shorten there. The product keeps gluetun's defaults.
+services:
+  gluetun:
+    environment:
+      HEALTH_TARGET_ADDRESSES: ${E2E_VPN_FAR:?}.210:4130
+      HEALTH_ICMP_TARGET_IPS: ${E2E_VPN_FAR:?}.210
+      PUBLICIP_API: 'echoip#http://${E2E_VPN_FAR:?}.210:4130'
+      DNS_SERVER: 'off'
+      DNS_ADDRESS: ${E2E_VPN_FAR:?}.210
+      VERSION_INFORMATION: 'off'

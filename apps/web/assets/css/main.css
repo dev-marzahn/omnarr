@@ -1,0 +1,13 @@
+@import 'tailwindcss';
+@import '@nuxt/ui';
+
+/* The theme: black / white actions, darker green and amber text in light mode. */
+:root {
+  --ui-primary: var(--ui-color-neutral-900);
+  --ui-success: var(--ui-color-success-600);
+  --ui-warning: var(--ui-color-warning-600);
+}
+
+.dark {
+  --ui-primary: white;
+}

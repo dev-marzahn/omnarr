@@ -1,0 +1,22 @@
+{
+  "Items": [
+    {
+      "Name": "Harbour Lights",
+      "ServerId": "a14f1e2940ca489c9325e30d53dad25c",
+      "Id": "3b2d5c2b90e157368374366664281bef",
+      "Path": "/data/library/series/Harbour Lights (2021) [tmdbid-1001]",
+      "ChannelId": null,
+      "ProductionYear": 2021,
+      "IsFolder": true,
+      "Type": "Series",
+      "AirDays": [],
+      "ImageTags": {},
+      "BackdropImageTags": [],
+      "ImageBlurHashes": {},
+      "LocationType": "FileSystem",
+      "MediaType": "Unknown"
+    }
+  ],
+  "TotalRecordCount": 1,
+  "StartIndex": 0
+}

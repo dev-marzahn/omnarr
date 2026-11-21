@@ -1,0 +1,42 @@
+[
+  { "mappingId": "s-0000000000000000000000a1", "tvdbId": 7700001, "title": "Harbour Lights UK", "searchTitle": "Harbour Lights", "season": -1 },
+  {
+    "mappingId": "s-0000000000000000000000a2",
+    "tvdbId": 7700001,
+    "title": "The Harbour Lights",
+    "searchTitle": "Harbour Lights",
+    "season": -1,
+    "comment": "older release name"
+  },
+  {
+    "mappingId": "s-0000000000000000000000a3",
+    "tvdbId": 7700001,
+    "title": "Harbour Lights Winter Tales",
+    "searchTitle": "Harbour Lights Winter Tales",
+    "season": 0
+  },
+  {
+    "mappingId": "s-0000000000000000000000a4",
+    "tvdbId": 7700001,
+    "title": "Harbour Lights Reborn",
+    "searchTitle": "Harbour Lights Reborn",
+    "season": 3,
+    "sceneSeasonNumber": 1
+  },
+  {
+    "mappingId": "s-0000000000000000000000a5",
+    "tvdbId": 7700001,
+    "title": "Harbour",
+    "searchTitle": "Harbour",
+    "season": -1,
+    "filterRegex": "(?i)^Harbour\\.S01E"
+  },
+  {
+    "mappingId": "s-0000000000000000000000a6",
+    "tvdbId": 7700003,
+    "title": "Northbound Signal US",
+    "searchTitle": "Northbound Signal",
+    "season": -1,
+    "sceneOrigin": "tvdb"
+  }
+]

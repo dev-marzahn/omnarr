@@ -1,0 +1,10 @@
+{
+  "result": "success",
+  "data": {
+    "all": { "en": ["JoJo's Bizarre Adventure (2012)"], "ja": ["JoJo no Kimyou na Bouken"] },
+    "2": { "en": ["JoJo's Bizarre Adventure - Stardust Crusaders"] },
+    "5": { "en": ["JoJo's Bizarre Adventure - Stone Ocean"] },
+    "6": { "ja": ["JoJo no Kimyou na Bouken: Steel Ball Run"] }
+  },
+  "message": ""
+}

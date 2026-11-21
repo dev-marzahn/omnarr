@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Hand-written. Caps without supportedParams or limits, and without movie-search. -->
+<caps>
+  <server title="Old Indexer"/>
+  <searching>
+    <search available="yes"/>
+    <tv-search available="yes"/>
+  </searching>
+  <categories>
+    <category id="5000" name="TV">
+      <subcat id="5030" name="SD"/>
+    </category>
+  </categories>
+</caps>

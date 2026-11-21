@@ -1,0 +1,24 @@
+{
+  "Items": [
+    {
+      "Name": "Quiet Harbour (2020) [tmdbid-2002]",
+      "ServerId": "a14f1e2940ca489c9325e30d53dad25c",
+      "Id": "84a5c11086cb24816d1941712c423f5f",
+      "Container": "mkv",
+      "Path": "/data/library/movies/Quiet Harbour (2020) [tmdbid-2002]/Quiet Harbour (2020) [tmdbid-2002] - [WEBDL-1080p]-GRP.mkv",
+      "ChannelId": null,
+      "RunTimeTicks": 20210000,
+      "ProductionYear": 2002,
+      "IsFolder": false,
+      "Type": "Movie",
+      "VideoType": "VideoFile",
+      "ImageTags": {},
+      "BackdropImageTags": [],
+      "ImageBlurHashes": {},
+      "LocationType": "FileSystem",
+      "MediaType": "Video"
+    }
+  ],
+  "TotalRecordCount": 1,
+  "StartIndex": 0
+}

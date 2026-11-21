@@ -1,0 +1,21 @@
+{
+  "name": "@omnarr/scoring",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./shipped/v1": "./src/shipped/v1/index.ts",
+    "./shipped/v2": "./src/shipped/v2/index.ts"
+  },
+  "scripts": {
+    "test": "vp test"
+  },
+  "dependencies": {
+    "@omnarr/contracts": "workspace:*",
+    "@omnarr/parser": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "vite-plus": "catalog:"
+  }
+}

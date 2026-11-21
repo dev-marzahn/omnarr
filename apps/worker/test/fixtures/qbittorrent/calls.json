@@ -1,0 +1,505 @@
+[
+  {
+    "case": "loginOk",
+    "method": "POST",
+    "path": "/api/v2/auth/login",
+    "request": "username=omnarr&password=<seeded password>",
+    "status": 204,
+    "contentType": null,
+    "setCookie": "QBT_SID_8080=<redacted>; HttpOnly; SameSite=Lax; expires=<an hour after login>; path=/",
+    "body": ""
+  },
+  {
+    "case": "loginWrongPassword",
+    "method": "POST",
+    "path": "/api/v2/auth/login",
+    "request": "username=omnarr&password=<wrong>",
+    "status": 401,
+    "contentType": "text/plain; charset=UTF-8",
+    "body": "Unauthorized"
+  },
+  {
+    "case": "loginWrongUser",
+    "method": "POST",
+    "path": "/api/v2/auth/login",
+    "request": "username=admin&password=<seeded password>",
+    "status": 401,
+    "contentType": "text/plain; charset=UTF-8",
+    "body": "Unauthorized"
+  },
+  {
+    "case": "noCookie",
+    "method": "GET",
+    "path": "/api/v2/app/version",
+    "request": "no cookie",
+    "status": 403,
+    "contentType": "text/plain; charset=UTF-8",
+    "body": "Forbidden"
+  },
+  {
+    "case": "staleSid",
+    "method": "GET",
+    "path": "/api/v2/app/version",
+    "request": "QBT_SID_8080=<a value the server never issued>",
+    "status": 403,
+    "contentType": "text/plain; charset=UTF-8",
+    "body": "Forbidden"
+  },
+  {
+    "case": "appVersion",
+    "method": "GET",
+    "path": "/api/v2/app/version",
+    "request": "",
+    "status": 200,
+    "contentType": "text/plain; charset=UTF-8",
+    "body": "v5.3.0"
+  },
+  {
+    "case": "webapiVersion",
+    "method": "GET",
+    "path": "/api/v2/app/webapiVersion",
+    "request": "",
+    "status": 200,
+    "contentType": "text/plain; charset=UTF-8",
+    "body": "2.16.2"
+  },
+  {
+    "case": "setPreferences",
+    "method": "POST",
+    "path": "/api/v2/app/setPreferences",
+    "request": "json=<the platform's preferences, see README>",
+    "status": 200,
+    "contentType": "text/plain; charset=UTF-8",
+    "body": ""
+  },
+  {
+    "case": "createCategory",
+    "method": "POST",
+    "path": "/api/v2/torrents/createCategory",
+    "request": "category=platform-series&savePath=/data/downloads/torrents/platform-series",
+    "status": 200,
+    "contentType": "text/plain; charset=UTF-8",
+    "body": ""
+  },
+  {
+    "case": "createCategoryExists",
+    "method": "POST",
+    "path": "/api/v2/torrents/createCategory",
+    "request": "category=platform-series&savePath=/data/downloads/torrents/platform-series (again)",
+    "status": 409,
+    "contentType": "text/plain; charset=UTF-8",
+    "body": "Unable to create category"
+  },
+  {
+    "case": "editCategory",
+    "method": "POST",
+    "path": "/api/v2/torrents/editCategory",
+    "request": "category=platform-movies&savePath=/data/downloads/torrents/platform-movies",
+    "status": 200,
+    "contentType": "text/plain; charset=UTF-8",
+    "body": ""
+  },
+  {
+    "case": "editCategoryMissing",
+    "method": "POST",
+    "path": "/api/v2/torrents/editCategory",
+    "request": "category=platform-nope&savePath=…",
+    "status": 404,
+    "contentType": "text/plain; charset=UTF-8",
+    "body": "Category does not exist"
+  },
+  {
+    "case": "addFile",
+    "method": "POST",
+    "path": "/api/v2/torrents/add",
+    "request": "multipart: torrents=v1-single.torrent, category, tags=omnarr-<id>, ratioLimit=2, seedingTimeLimit=20160, inactiveSeedingTimeLimit=-1, stopped=false",
+    "status": 200,
+    "contentType": "application/json",
+    "body": {
+      "added_torrent_ids": ["f3170e36e5aefb892f6640007f31068957d50856"],
+      "failure_count": 0,
+      "pending_count": 0,
+      "success_count": 1
+    }
+  },
+  {
+    "case": "addFileDuplicate",
+    "method": "POST",
+    "path": "/api/v2/torrents/add",
+    "request": "multipart: the same file again, another tag",
+    "status": 409,
+    "contentType": "text/plain; charset=UTF-8",
+    "body": "Conflict"
+  },
+  {
+    "case": "addFileNotATorrent",
+    "method": "POST",
+    "path": "/api/v2/torrents/add",
+    "request": "multipart: torrents=garbage.torrent (\"not a torrent\")",
+    "status": 415,
+    "contentType": "text/plain; charset=UTF-8",
+    "body": "Error: 'garbage.torrent' is not a valid torrent file."
+  },
+  {
+    "case": "addFileNoPieces",
+    "method": "POST",
+    "path": "/api/v2/torrents/add",
+    "request": "multipart: torrents=bad.torrent (d4:infod4:name3:abcee)",
+    "status": 415,
+    "contentType": "text/plain; charset=UTF-8",
+    "body": "Error: 'bad.torrent' is not a valid torrent file."
+  },
+  {
+    "case": "addNothing",
+    "method": "POST",
+    "path": "/api/v2/torrents/add",
+    "request": "multipart: category only, no torrents and no urls",
+    "status": 409,
+    "contentType": "text/plain; charset=UTF-8",
+    "body": "Conflict"
+  },
+  {
+    "case": "addMagnet",
+    "method": "POST",
+    "path": "/api/v2/torrents/add",
+    "request": "multipart: urls=magnet:?xt=urn:btih:<40 hex>&dn=…",
+    "status": 200,
+    "contentType": "application/json",
+    "body": {
+      "added_torrent_ids": ["0b4c7a5f2e8d9c1b3a6f4e2d8c0b1a9f7e5d3c2b"],
+      "failure_count": 0,
+      "pending_count": 0,
+      "success_count": 1
+    }
+  },
+  {
+    "case": "addMagnetBtmh",
+    "method": "POST",
+    "path": "/api/v2/torrents/add",
+    "request": "multipart: urls=magnet:?xt=urn:btmh:1220<64 hex>&dn=…",
+    "status": 200,
+    "contentType": "application/json",
+    "body": {
+      "added_torrent_ids": ["5a1f0e9d8c7b6a5f4e3d2c1b0a9f8e7d6c5b4a3f"],
+      "failure_count": 0,
+      "pending_count": 0,
+      "success_count": 1
+    }
+  },
+  {
+    "case": "addMagnetDuplicate",
+    "method": "POST",
+    "path": "/api/v2/torrents/add",
+    "request": "multipart: the same btih magnet again",
+    "status": 409,
+    "contentType": "text/plain; charset=UTF-8",
+    "body": "Conflict"
+  },
+  {
+    "case": "addMagnetNoHash",
+    "method": "POST",
+    "path": "/api/v2/torrents/add",
+    "request": "multipart: urls=magnet:?dn=no-hash",
+    "status": 409,
+    "contentType": "text/plain; charset=UTF-8",
+    "body": "Conflict"
+  },
+  {
+    "case": "addV2File",
+    "method": "POST",
+    "path": "/api/v2/torrents/add",
+    "request": "multipart: torrents=v2-single.torrent",
+    "status": 200,
+    "contentType": "application/json",
+    "body": {
+      "added_torrent_ids": ["36c337ee7b2f2a944e626e0bb68f61b9f4cddf2a"],
+      "failure_count": 0,
+      "pending_count": 0,
+      "success_count": 1
+    }
+  },
+  {
+    "case": "addHybridFile",
+    "method": "POST",
+    "path": "/api/v2/torrents/add",
+    "request": "multipart: torrents=hybrid-multi.torrent",
+    "status": 200,
+    "contentType": "application/json",
+    "body": {
+      "added_torrent_ids": ["532ca42b979ffddc7a36b99af8c5a9010812af97"],
+      "failure_count": 0,
+      "pending_count": 0,
+      "success_count": 1
+    }
+  },
+  {
+    "case": "addPausedTrue",
+    "method": "POST",
+    "path": "/api/v2/torrents/add",
+    "request": "multipart: paused=true (no stopped): the torrent started anyway",
+    "status": 200,
+    "contentType": "application/json",
+    "body": {
+      "added_torrent_ids": ["b541cf16fe62aa748156b33382b7a0e9b049ec90"],
+      "failure_count": 0,
+      "pending_count": 0,
+      "success_count": 1
+    }
+  },
+  {
+    "case": "addStoppedTrue",
+    "method": "POST",
+    "path": "/api/v2/torrents/add",
+    "request": "multipart: stopped=true",
+    "status": 200,
+    "contentType": "application/json",
+    "body": {
+      "added_torrent_ids": ["240240925ebc132f27f6630504fb634a56cdf97a"],
+      "failure_count": 0,
+      "pending_count": 0,
+      "success_count": 1
+    }
+  },
+  {
+    "case": "addTags",
+    "method": "POST",
+    "path": "/api/v2/torrents/addTags",
+    "request": "hashes=<listed hash>&tags=omnarr-<id>",
+    "status": 200,
+    "contentType": "text/plain; charset=UTF-8",
+    "body": ""
+  },
+  {
+    "case": "addTagsUnknownHash",
+    "method": "POST",
+    "path": "/api/v2/torrents/addTags",
+    "request": "hashes=ffff…ffff&tags=omnarr-<id>",
+    "status": 200,
+    "contentType": "text/plain; charset=UTF-8",
+    "body": ""
+  },
+  {
+    "case": "addTagsV1HashOfHybrid",
+    "method": "POST",
+    "path": "/api/v2/torrents/addTags",
+    "request": "hashes=<SHA-1 of a hybrid torrent>: no torrent was tagged",
+    "status": 200,
+    "contentType": "text/plain; charset=UTF-8",
+    "body": ""
+  },
+  {
+    "case": "removeTags",
+    "method": "POST",
+    "path": "/api/v2/torrents/removeTags",
+    "request": "hashes=<listed hash>&tags=<a tag it has>",
+    "status": 200,
+    "contentType": "text/plain; charset=UTF-8",
+    "body": ""
+  },
+  {
+    "case": "removeTagsAbsentTag",
+    "method": "POST",
+    "path": "/api/v2/torrents/removeTags",
+    "request": "hashes=<listed hash>&tags=<a tag it doesn't have>",
+    "status": 200,
+    "contentType": "text/plain; charset=UTF-8",
+    "body": ""
+  },
+  {
+    "case": "removeTagsUnknownHash",
+    "method": "POST",
+    "path": "/api/v2/torrents/removeTags",
+    "request": "hashes=ffff…ffff",
+    "status": 200,
+    "contentType": "text/plain; charset=UTF-8",
+    "body": ""
+  },
+  {
+    "case": "stop",
+    "method": "POST",
+    "path": "/api/v2/torrents/stop",
+    "request": "hashes=<listed hash>",
+    "status": 200,
+    "contentType": "text/plain; charset=UTF-8",
+    "body": ""
+  },
+  {
+    "case": "start",
+    "method": "POST",
+    "path": "/api/v2/torrents/start",
+    "request": "hashes=<listed hash>",
+    "status": 200,
+    "contentType": "text/plain; charset=UTF-8",
+    "body": ""
+  },
+  {
+    "case": "pauseLegacy",
+    "method": "POST",
+    "path": "/api/v2/torrents/pause",
+    "request": "hashes=<listed hash>",
+    "status": 404,
+    "contentType": "text/plain; charset=UTF-8",
+    "body": "Endpoint does not exist"
+  },
+  {
+    "case": "resumeLegacy",
+    "method": "POST",
+    "path": "/api/v2/torrents/resume",
+    "request": "hashes=<listed hash>",
+    "status": 404,
+    "contentType": "text/plain; charset=UTF-8",
+    "body": "Endpoint does not exist"
+  },
+  {
+    "case": "deleteWithFiles",
+    "method": "POST",
+    "path": "/api/v2/torrents/delete",
+    "request": "hashes=<v1-multi>&deleteFiles=true",
+    "status": 200,
+    "contentType": "text/plain; charset=UTF-8",
+    "body": ""
+  },
+  {
+    "case": "deleteWithoutFiles",
+    "method": "POST",
+    "path": "/api/v2/torrents/delete",
+    "request": "hashes=<hybrid>&deleteFiles=false",
+    "status": 200,
+    "contentType": "text/plain; charset=UTF-8",
+    "body": ""
+  },
+  {
+    "case": "deleteUnknownHash",
+    "method": "POST",
+    "path": "/api/v2/torrents/delete",
+    "request": "hashes=ffff…ffff&deleteFiles=true",
+    "status": 200,
+    "contentType": "text/plain; charset=UTF-8",
+    "body": ""
+  },
+  {
+    "case": "deleteNoDeleteFiles",
+    "method": "POST",
+    "path": "/api/v2/torrents/delete",
+    "request": "hashes=ffff…ffff (deleteFiles left out)",
+    "status": 400,
+    "contentType": "text/plain; charset=UTF-8",
+    "body": "Missing required parameters: deleteFiles"
+  },
+  {
+    "case": "trackersUnknownHash",
+    "method": "GET",
+    "path": "/api/v2/torrents/trackers?hash=ffff…ffff",
+    "request": "",
+    "status": 404,
+    "contentType": "text/plain; charset=UTF-8",
+    "body": "Not Found"
+  },
+  {
+    "case": "infoUnknownHash",
+    "method": "GET",
+    "path": "/api/v2/torrents/info?hashes=ffff…ffff",
+    "request": "",
+    "status": 200,
+    "contentType": "application/json",
+    "body": []
+  },
+  {
+    "case": "infoV1HashOfHybrid",
+    "method": "GET",
+    "path": "/api/v2/torrents/info?hashes=<SHA-1 of the hybrid torrent>",
+    "request": "",
+    "status": 200,
+    "contentType": "application/json",
+    "body": []
+  },
+  {
+    "case": "infoFullV2Hash",
+    "method": "GET",
+    "path": "/api/v2/torrents/info?hashes=<64-hex v2 hash of the v2-only torrent>",
+    "request": "",
+    "status": 200,
+    "contentType": "application/json",
+    "body": []
+  },
+  {
+    "case": "infoUnknownTag",
+    "method": "GET",
+    "path": "/api/v2/torrents/info?tag=omnarr-g-nope",
+    "request": "",
+    "status": 200,
+    "contentType": "application/json",
+    "body": []
+  },
+  {
+    "case": "infoUnknownCategory",
+    "method": "GET",
+    "path": "/api/v2/torrents/info?category=platform-nope",
+    "request": "",
+    "status": 200,
+    "contentType": "application/json",
+    "body": []
+  },
+  {
+    "case": "creatorAddTask",
+    "method": "POST",
+    "path": "/api/v2/torrentcreator/addTask",
+    "request": "sourcePath=/data/source/<file>&format=v1&urlSeeds=http://seed:8000/fast/&private=false&startSeeding=false",
+    "status": 200,
+    "contentType": "application/json",
+    "body": {
+      "taskID": "4872ccbe-be80-4e6f-ad2f-752e97137084"
+    }
+  },
+  {
+    "case": "creatorStatus",
+    "method": "GET",
+    "path": "/api/v2/torrentcreator/status",
+    "request": "",
+    "status": 200,
+    "contentType": "application/json",
+    "body": [
+      {
+        "format": "v1",
+        "ignoreDotfiles": true,
+        "pieceSize": 16384,
+        "private": false,
+        "sourcePath": "/data/source/Example.Show.S01E01.1080p.WEB-DL-FIXTURE.mkv",
+        "status": "Finished",
+        "taskID": "4872ccbe-be80-4e6f-ad2f-752e97137084",
+        "timeAdded": 1794996178,
+        "timeFinished": 1794996178,
+        "timeStarted": 1794996178,
+        "trackers": [""],
+        "urlSeeds": ["http://seed:8000/fast/"]
+      }
+    ]
+  },
+  {
+    "case": "creatorDeleteTask",
+    "method": "POST",
+    "path": "/api/v2/torrentcreator/deleteTask",
+    "request": "taskID=<id>",
+    "status": 200,
+    "contentType": "text/plain; charset=UTF-8",
+    "body": ""
+  },
+  {
+    "case": "creatorDeleteTaskAgain",
+    "method": "POST",
+    "path": "/api/v2/torrentcreator/deleteTask",
+    "request": "taskID=<the deleted id>",
+    "status": 404,
+    "contentType": "text/plain; charset=UTF-8",
+    "body": "Not Found"
+  },
+  {
+    "case": "creatorStatusDeleted",
+    "method": "GET",
+    "path": "/api/v2/torrentcreator/status?taskID=<the deleted id>",
+    "request": "",
+    "status": 404,
+    "contentType": "text/plain; charset=UTF-8",
+    "body": "Not Found"
+  }
+]

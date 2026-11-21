@@ -1,0 +1,30 @@
+{
+  "Items": [
+    {
+      "Name": "Harbour Lights",
+      "ServerId": "a14f1e2940ca489c9325e30d53dad25c",
+      "Id": "dbd8c5b3558b6840fdf4385147fccbb3",
+      "Container": "mkv",
+      "Path": "/data/library/series/Harbour Lights (2021) [tmdbid-1001]/Season 01/Harbour Lights (2021) - S01E01 - Pilot [WEBDL-1080p]-GRP.mkv",
+      "ChannelId": null,
+      "RunTimeTicks": 20210000,
+      "ProductionYear": 2021,
+      "IndexNumber": 1,
+      "ParentIndexNumber": 1,
+      "IsFolder": false,
+      "Type": "Episode",
+      "SeriesName": "Harbour Lights",
+      "SeriesId": "3b2d5c2b90e157368374366664281bef",
+      "SeasonId": "e4bd72edca54a478fda1ff4a90f28cc0",
+      "SeasonName": "Season 1",
+      "VideoType": "VideoFile",
+      "ImageTags": {},
+      "BackdropImageTags": [],
+      "ImageBlurHashes": {},
+      "LocationType": "FileSystem",
+      "MediaType": "Video"
+    }
+  ],
+  "TotalRecordCount": 1,
+  "StartIndex": 0
+}

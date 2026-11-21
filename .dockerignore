@@ -1,0 +1,13 @@
+**/node_modules
+**/dist
+**/.nuxt
+**/.output
+docs
+.git
+e2e/fakes/usenet/media/generated
+e2e/artifacts
+# A local run of the root compose files; ./backups is root-owned 0700.
+data
+vpn
+backups
+.env

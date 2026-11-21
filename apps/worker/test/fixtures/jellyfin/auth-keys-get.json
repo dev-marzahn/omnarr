@@ -1,0 +1,30 @@
+{
+  "Items": [
+    {
+      "Id": 0,
+      "AccessToken": "9dabf0f764374170b47428c0c5d77bc1",
+      "DeviceId": "",
+      "AppName": "omnarr",
+      "AppVersion": "",
+      "DeviceName": "",
+      "UserId": "00000000000000000000000000000000",
+      "IsActive": false,
+      "DateCreated": "2026-11-18T02:07:10.2015767Z",
+      "DateLastActivity": "0001-01-01T00:00:00.0000000Z"
+    },
+    {
+      "Id": 0,
+      "AccessToken": "a8bf232a578942aa9812e0b1cf209d14",
+      "DeviceId": "",
+      "AppName": "omnarr",
+      "AppVersion": "",
+      "DeviceName": "",
+      "UserId": "00000000000000000000000000000000",
+      "IsActive": false,
+      "DateCreated": "2026-11-18T02:07:10.22186Z",
+      "DateLastActivity": "0001-01-01T00:00:00.0000000Z"
+    }
+  ],
+  "TotalRecordCount": 2,
+  "StartIndex": 0
+}

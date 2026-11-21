@@ -1,0 +1,44 @@
+{
+  "name": "@omnarr/backend",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./api": {
+      "types": "./convex/_generated/api.d.ts",
+      "default": "./convex/_generated/api.js"
+    },
+    "./dataModel": {
+      "types": "./convex/_generated/dataModel.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "vp pack",
+    "test": "vp test"
+  },
+  "dependencies": {
+    "@convex-dev/better-auth": "catalog:",
+    "@convex-dev/migrations": "catalog:",
+    "@convex-dev/workflow": "catalog:",
+    "@convex-dev/workpool": "catalog:",
+    "@dev-marzahn/convex-release": "catalog:",
+    "@dev-marzahn/convex-workflow-migrations": "catalog:",
+    "@omnarr/contracts": "workspace:*",
+    "@omnarr/parser": "workspace:*",
+    "@omnarr/scoring": "workspace:*",
+    "better-auth": "catalog:",
+    "convex": "catalog:",
+    "convex-helpers": "catalog:",
+    "css-select": "catalog:",
+    "fast-xml-parser": "catalog:",
+    "htmlparser2": "catalog:",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@edge-runtime/vm": "catalog:",
+    "@omnarr/e2e": "workspace:*",
+    "@types/node": "catalog:",
+    "auth": "catalog:",
+    "convex-test": "catalog:",
+    "vite-plus": "catalog:"
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "name": "@omnarr/e2e",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./fakes/newznab": "./fakes/newznab/handler.ts",
+    "./fakes/newznab/server": "./fakes/newznab/server.ts",
+    "./fakes/newznab/fixtures": "./fakes/newznab/fixtures.ts",
+    "./fakes/nntp/server": "./fakes/nntp/server.ts",
+    "./fakes/nyaa": "./fakes/nyaa/handler.ts",
+    "./fakes/usenet/catalogue": "./fakes/usenet/catalogue.ts",
+    "./fakes/usenet/release": "./fakes/usenet/release.ts",
+    "./fakes/usenet/yenc": "./fakes/usenet/yenc.ts",
+    "./fakes/tmdb": "./fakes/tmdb/handler.ts",
+    "./fakes/tmdb/fixtures": "./fakes/tmdb/fixtures.ts"
+  },
+  "scripts": {
+    "test": "vp test"
+  },
+  "devDependencies": {
+    "@omnarr/contracts": "workspace:*",
+    "@types/node": "catalog:",
+    "convex": "catalog:",
+    "vite-plus": "catalog:"
+  }
+}

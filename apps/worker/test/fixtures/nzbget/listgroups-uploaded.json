@@ -1,0 +1,86 @@
+{
+  "version": "1.1",
+  "id": 1,
+  "result": [
+    {
+      "FirstID": 4,
+      "LastID": 4,
+      "RemainingSizeLo": 16202,
+      "RemainingSizeHi": 0,
+      "RemainingSizeMB": 0,
+      "PausedSizeLo": 0,
+      "PausedSizeHi": 0,
+      "PausedSizeMB": 0,
+      "RemainingFileCount": 1,
+      "RemainingParCount": 0,
+      "MinPriority": 0,
+      "MaxPriority": 0,
+      "ActiveDownloads": 1,
+      "Status": "DOWNLOADING",
+      "NZBID": 4,
+      "NZBName": "Uploaded.Release",
+      "NZBNicename": "Uploaded.Release",
+      "Kind": "NZB",
+      "URL": "",
+      "NZBFilename": "Uploaded.Release.nzb",
+      "DestDir": "\/config\/downloads\/intermediate\/Uploaded.Release.#4",
+      "FinalDir": "",
+      "Category": "platform-series",
+      "ParStatus": "NONE",
+      "ExParStatus": "NONE",
+      "UnpackStatus": "NONE",
+      "MoveStatus": "NONE",
+      "ScriptStatus": "NONE",
+      "DeleteStatus": "NONE",
+      "MarkStatus": "NONE",
+      "UrlStatus": "NONE",
+      "FileSizeLo": 20559,
+      "FileSizeHi": 0,
+      "FileSizeMB": 0,
+      "FileCount": 1,
+      "MinPostTime": 1793491200,
+      "MaxPostTime": 1793491200,
+      "TotalArticles": 5,
+      "SuccessArticles": 1,
+      "FailedArticles": 0,
+      "Health": 1000,
+      "CriticalHealth": 1000,
+      "DupeKey": "",
+      "DupeScore": 0,
+      "DupeMode": "FORCE",
+      "Deleted": false,
+      "DownloadedSizeLo": 4435,
+      "DownloadedSizeHi": 0,
+      "DownloadedSizeMB": 0,
+      "DownloadTimeSec": 3,
+      "PostTotalTimeSec": 0,
+      "ParTimeSec": 0,
+      "RepairTimeSec": 0,
+      "UnpackTimeSec": 0,
+      "MessageCount": 2,
+      "ExtraParBlocks": 0,
+      "Parameters": [
+        {
+          "Name": "omnarr",
+          "Value": "grab-uploaded"
+        },
+        {
+          "Name": "*Unpack:",
+          "Value": "yes"
+        }
+      ],
+      "ScriptStatuses": [],
+      "ServerStats": [
+        {
+          "ServerID": 1,
+          "SuccessArticles": 1,
+          "FailedArticles": 0
+        }
+      ],
+      "PostInfoText": "NONE",
+      "PostStageProgress": -1111755928,
+      "PostStageTimeSec": 0,
+      "Log": []
+    }
+  ]
+}

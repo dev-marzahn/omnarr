@@ -1,0 +1,19 @@
+{
+  "name": "@omnarr/scripts",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vp test",
+    "make-media-fixtures": "node make-media-fixtures.ts"
+  },
+  "dependencies": {
+    "@omnarr/contracts": "workspace:*",
+    "fast-xml-parser": "catalog:",
+    "yaml": "catalog:"
+  },
+  "devDependencies": {
+    "@omnarr/e2e": "workspace:*",
+    "@types/node": "catalog:",
+    "vite-plus": "catalog:"
+  }
+}

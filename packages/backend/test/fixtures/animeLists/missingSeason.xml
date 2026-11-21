@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<!-- Hand-written in the shape of the real JUJUTSU KAISEN entries:
+     made-up titles and IDs, matching the TMDB fake's Ember Rite.
+     TMDB merged the show into one season; the second-season entry still
+     points at TMDB season 2, and the third starts at tmdboffset 7. -->
+<anime-list>
+  <anime anidbid="17011" tvdbid="7700007" defaulttvdbseason="1" episodeoffset="" tmdbtv="900007" tmdbseason="1" tmdboffset="" tmdbid="" imdbid="">
+    <name>Ember Rite</name>
+  </anime>
+  <anime anidbid="17012" tvdbid="7700007" defaulttvdbseason="2" episodeoffset="" tmdbtv="900007" tmdbseason="2" tmdboffset="" tmdbid="" imdbid="">
+    <name>Ember Rite (2023)</name>
+  </anime>
+  <anime anidbid="17013" tvdbid="7700007" defaulttvdbseason="3" episodeoffset="" tmdbtv="900007" tmdbseason="1" tmdboffset="7" tmdbid="" imdbid="">
+    <name>Ember Rite: Ashen Vigil Arc</name>
+  </anime>
+</anime-list>

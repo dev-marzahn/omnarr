@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Hand-written. One item per download-URL scheme; only http, https and magnet are kept. -->
+<rss version="2.0" xmlns:newznab="http://www.newznab.com/DTD/2010/feeds/attributes/">
+  <channel>
+    <newznab:response offset="0" total="5"/>
+    <item>
+      <title>The.Long.Harbor.S01E03.720p.HDTV.x264-GRPC</title>
+      <guid>file-scheme</guid>
+      <enclosure url="file:///etc/passwd" length="100" type="application/x-nzb"/>
+    </item>
+    <item>
+      <title>The.Long.Harbor.S01E03.1080p.WEB.h264-GRPD</title>
+      <guid>internal-host</guid>
+      <enclosure url="ftp://10.0.0.1/a.nzb" length="100" type="application/x-nzb"/>
+    </item>
+    <item>
+      <title>The.Long.Harbor.S01E03.1080p.WEB.h264-GRPE</title>
+      <guid>plain-http</guid>
+      <enclosure url="http://indexer.example/getnzb/plain.nzb" length="not a number" type="application/x-nzb"/>
+    </item>
+    <item>
+      <title>The.Long.Harbor.S01E03.1080p.WEB.h264-GRPF</title>
+      <guid>magnet</guid>
+      <link>magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567</link>
+    </item>
+    <item>
+      <title>The.Long.Harbor.S01E03.1080p.WEB.h264-GRPG</title>
+      <guid>relative</guid>
+      <enclosure url="/getnzb/relative.nzb" type="application/x-nzb"/>
+    </item>
+  </channel>
+</rss>

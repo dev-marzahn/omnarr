@@ -1,0 +1,217 @@
+# The e2e's override over the shipped compose files:
+#
+#   docker compose -p <project> --project-directory <tmp> \
+#     -f compose.yml -f e2e/compose.test.yml --profile test up -d --wait
+#
+# e2e/stack.ts runs it. The project directory is a temporary folder holding
+# vpn/ and backups/, so the root files' ./vpn and ./backups land there; the
+# fakes' folder is named by E2E_FAKES, an absolute path. What it changes:
+#
+# - the project's images are the ones up() builds (E2E_*_IMAGE);
+# - /data is a named volume (OMNARR_DATA_DIR=e2e-data), not a host folder;
+# - the worker starts only with the `worker` profile, so the scenarios start
+#   it; `worker-old` poses as an older release;
+# - the fakes (TMDB, Newznab, NNTP, the Torznab fake, Nyaa, the web seed) and
+#   qBittorrent's internal `swarm` network, so no torrent traffic leaves the
+#   test, and qBittorrent publishes no port;
+# - test-only settings: the backend's TMDB key, the worker's ID and lowered
+#   timers (OMNARR_TEST_LIMITS), a second, rate-limited indexer.
+services:
+  setup:
+    image: ${E2E_WORKER_IMAGE:?}
+  backend:
+    image: ${E2E_BACKEND_IMAGE:?}
+    environment:
+      # The TMDB fake's key; the pre-push hook sets it on the deployment.
+      TMDB_API_TOKEN: test-tmdb-key
+  web:
+    image: ${E2E_WEB_IMAGE:?}
+
+  worker:
+    profiles: [worker]
+    image: ${E2E_WORKER_IMAGE:?}
+    # The default network for the backend, NZBGet, Jellyfin and the indexers; swarm for qBittorrent.
+    networks: [default, swarm]
+    environment:
+      WORKER_ID: worker-e2e
+      # Test only: the timers e2e/stack.ts lowers (E2E_LIMITS), so no test waits on a production timer.
+      OMNARR_TEST_LIMITS: ${E2E_TEST_LIMITS:-}
+      # The definitions come from the fake, never indexers.prowlarr.com, in every scenario.
+      OMNARR_DEFINITIONS_URL: http://sites:4160
+
+  # The same image posing as an older release.
+  worker-old:
+    profiles: [worker-old]
+    image: ${E2E_WORKER_IMAGE:?}
+    user: '1000:1000'
+    environment:
+      CONVEX_URL: http://backend:3210
+      WORKER_TOKEN_FILE: /run/omnarr/secrets/worker_token
+      WORKER_ID: worker-old
+      WORKER_PROTOCOL_VERSION: '0'
+      # Its handshake retry, among the rest, lowered as the worker's (the old-worker test waits for a second one).
+      OMNARR_TEST_LIMITS: ${E2E_TEST_LIMITS:-}
+    volumes:
+      - e2e-data:/data
+      - secrets:/run/omnarr/secrets:ro
+
+  nzbget:
+    depends_on:
+      nntp: { condition: service_started }
+      nntp-backup: { condition: service_started }
+
+  # Only on the internal swarm network, so it reaches nothing outside the test; the peer port stays unpublished.
+  # `!override`, not `!reset`: `!reset` drops the list and leaves qBittorrent on `default`, with the internet.
+  qbittorrent:
+    networks: !override [swarm]
+    ports: !reset []
+    depends_on:
+      webseed: { condition: service_started }
+
+  tmdb:
+    profiles: [test]
+    image: node:24-bookworm-slim
+    command: ['node', '/fakes/tmdb/server.ts']
+    working_dir: /fakes/tmdb
+    environment:
+      PORT: '8000'
+      TMDB_API_KEY: test-tmdb-key
+    volumes:
+      - ${E2E_FAKES:?}:/fakes:ro
+    # Internal only: the backend reaches it as http://tmdb:8000.
+    expose: ['8000']
+  newznab:
+    profiles: [test]
+    image: node:24-bookworm-slim
+    command: ['node', '/fakes/newznab/server.ts']
+    working_dir: /fakes/newznab
+    environment:
+      NEWZNAB_FAKE_PORT: '4120'
+      NEWZNAB_API_KEY: test-newznab-key
+      # The releases the NNTP fake serves (fakes/usenet/catalogue.ts).
+      NEWZNAB_CATALOGUE: e2e
+    volumes:
+      - ${E2E_FAKES:?}:/fakes:ro
+    # Internal only: the backend reaches it as http://newznab:4120/api, and
+    # its NZB links as http://newznab:4120/getnzb/<guid>.nzb.
+    expose: ['4120']
+  # A second indexer that answers every request with its API limit.
+  newznab-limited:
+    profiles: [test]
+    image: node:24-bookworm-slim
+    command: ['node', '/fakes/newznab/server.ts']
+    working_dir: /fakes/newznab
+    environment:
+      NEWZNAB_FAKE_PORT: '4121'
+      NEWZNAB_API_KEY: test-newznab-key
+      NEWZNAB_CATALOGUE: e2e
+      # Empty while the test adds the indexer (its connection test must pass), then limit500.
+      NEWZNAB_FAILURE: ${E2E_LIMITED_FAILURE:-}
+    volumes:
+      - ${E2E_FAKES:?}:/fakes:ro
+    expose: ['4121']
+  # The torrents scenario's Torznab indexer: the web seed's torrents.
+  torznab:
+    profiles: [test]
+    image: node:24-bookworm-slim
+    command: ['node', '/fakes/newznab/server.ts']
+    working_dir: /fakes/newznab
+    environment:
+      NEWZNAB_FAKE_PORT: '4122'
+      NEWZNAB_API_KEY: test-newznab-key
+      NEWZNAB_CATALOGUE: torrents
+    volumes:
+      - ${E2E_FAKES:?}:/fakes:ro
+    # Internal only: the backend reaches it as http://torznab:4122/api, the worker its .torrent links.
+    expose: ['4122']
+  # The fake Nyaa, the backend's NYAA_URL. Its magnets name the web seed's tracker, which hands out the seed peer.
+  nyaa:
+    profiles: [test]
+    image: node:24-bookworm-slim
+    command: ['node', '/fakes/nyaa/server.ts']
+    working_dir: /fakes/nyaa
+    environment:
+      NYAA_FAKE_PORT: '4140'
+      NYAA_ORIGIN: http://nyaa:4140
+      NYAA_CATALOGUE: e2e
+    volumes:
+      - ${E2E_FAKES:?}:/fakes:ro
+    # Internal only: the backend reaches it as http://nyaa:4140.
+    expose: ['4140']
+  # The fake definitions server (the worker's OMNARR_DEFINITIONS_URL) and the fake Star Site its package names.
+  sites:
+    profiles: [test]
+    image: node:24-bookworm-slim
+    command: ['node', '/fakes/sites/server.ts']
+    working_dir: /fakes/sites
+    environment:
+      SITES_FAKE_PORT: '4160'
+      SITES_ORIGIN: http://sites:4160
+    volumes:
+      - ${E2E_FAKES:?}:/fakes:ro
+    # Internal only: the worker reaches it as http://sites:4160.
+    expose: ['4160']
+  # The fake of Sonarr's scene-mapping service, the backend's SCENE_MAPPINGS_URL.
+  scenemapping:
+    profiles: [test]
+    image: node:24-bookworm-slim
+    command: ['node', '/fakes/scenemapping/server.ts']
+    working_dir: /fakes/scenemapping
+    environment:
+      SCENE_MAPPING_FAKE_PORT: '4150'
+    volumes:
+      - ${E2E_FAKES:?}:/fakes:ro
+    # Internal only: the backend reaches it as http://scenemapping:4150/v1/scenemapping.
+    expose: ['4150']
+  # The torrents' content: a BEP 19 web seed (http://webseed:4130/files/) and a seed peer for magnets.
+  webseed:
+    profiles: [test]
+    image: node:24-bookworm-slim
+    command: ['node', '/fakes/webseed/server.ts']
+    working_dir: /fakes/webseed
+    environment:
+      WEBSEED_PORT: '4130'
+      WEBSEED_PEER_PORT: '6881'
+    volumes:
+      - ${E2E_FAKES:?}:/fakes:ro
+    expose: ['4130', '6881']
+    # Only on the swarm network, with qBittorrent: torrent traffic never leaves the test.
+    networks: [swarm]
+  nntp:
+    profiles: [test]
+    image: node:24-bookworm-slim
+    command: ['node', '/fakes/nntp/server.ts']
+    working_dir: /fakes/nntp
+    environment:
+      NNTP_FAKE_PORT: '119'
+      NNTP_USERNAME: test-nntp-user
+      NNTP_PASSWORD: test-nntp-password
+    volumes:
+      - ${E2E_FAKES:?}:/fakes:ro
+    # Internal only: NZBGet reaches it as nntp:119, without TLS.
+    expose: ['119']
+  # The `pipeline` scenario's "Bonus" backup server: the same releases under its own login, with
+  # nothing missing, as a separate Usenet system.
+  nntp-backup:
+    profiles: [test]
+    image: node:24-bookworm-slim
+    command: ['node', '/fakes/nntp/server.ts']
+    working_dir: /fakes/nntp
+    environment:
+      NNTP_FAKE_PORT: '119'
+      NNTP_USERNAME: test-nntp-backup
+      NNTP_PASSWORD: test-nntp-backup-password
+      # It still has the parts the damaged release lacks on `nntp`, so NZBGet fills them from it.
+      NNTP_COMPLETE: '1'
+    volumes:
+      - ${E2E_FAKES:?}:/fakes:ro
+    expose: ['119']
+
+volumes:
+  e2e-data:
+
+networks:
+  # qBittorrent and the web seed, with the worker that controls qBittorrent. Internal: no route out, so
+  # qBittorrent's DHT, PeX and LSD (which the product leaves on) never reach a peer outside the test.
+  swarm:
+    internal: true

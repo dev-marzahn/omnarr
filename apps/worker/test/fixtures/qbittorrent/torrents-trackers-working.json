@@ -1,0 +1,86 @@
+[
+  {
+    "msg": "",
+    "num_downloaded": 0,
+    "num_leeches": 0,
+    "num_peers": 0,
+    "num_seeds": 0,
+    "status": 2,
+    "tier": -1,
+    "url": "** [DHT] **"
+  },
+  {
+    "msg": "",
+    "num_downloaded": 0,
+    "num_leeches": 0,
+    "num_peers": 0,
+    "num_seeds": 0,
+    "status": 2,
+    "tier": -1,
+    "url": "** [PeX] **"
+  },
+  {
+    "msg": "",
+    "num_downloaded": 0,
+    "num_leeches": 0,
+    "num_peers": 0,
+    "num_seeds": 0,
+    "status": 2,
+    "tier": -1,
+    "url": "** [LSD] **"
+  },
+  {
+    "endpoints": [
+      {
+        "bt_version": 1,
+        "min_announce": 1794996869,
+        "msg": "",
+        "name": "172.18.0.2:6881",
+        "next_announce": 1794997139,
+        "num_downloaded": -1,
+        "num_leeches": 0,
+        "num_peers": 0,
+        "num_seeds": 1,
+        "status": 2,
+        "updating": false
+      },
+      {
+        "bt_version": 1,
+        "min_announce": 1794996839,
+        "msg": "skipping tracker announce (unreachable)",
+        "name": "[::1]:6881",
+        "next_announce": 1794996894,
+        "num_downloaded": -1,
+        "num_leeches": -1,
+        "num_peers": -1,
+        "num_seeds": -1,
+        "status": 6,
+        "updating": false
+      },
+      {
+        "bt_version": 1,
+        "min_announce": 1794996839,
+        "msg": "skipping tracker announce (unreachable)",
+        "name": "127.0.0.1:6881",
+        "next_announce": 1794996894,
+        "num_downloaded": -1,
+        "num_leeches": -1,
+        "num_peers": -1,
+        "num_seeds": -1,
+        "status": 6,
+        "updating": false
+      }
+    ],
+    "min_announce": 1794996869,
+    "msg": "",
+    "next_announce": 1794997139,
+    "num_downloaded": -1,
+    "num_leeches": 0,
+    "num_peers": 0,
+    "num_seeds": 1,
+    "status": 2,
+    "tier": 0,
+    "updating": false,
+    "url": "http://seed:8000/announce"
+  }
+]
