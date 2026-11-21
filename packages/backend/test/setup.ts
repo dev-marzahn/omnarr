@@ -36,8 +36,21 @@ export function setup() {
 
 export type Backend = ReturnType<typeof setup>;
 
-/** The backend as a signed-in admin: a Better Auth user with role `admin` and a session that lasts `sessionMs`. */
-export async function asAdmin(t: Backend, sessionMs = 3_600_000) {
+/** The latest time a JavaScript Date holds. */
+const LAST_DATE_MS = 8.64e15;
+
+/**
+ * The backend as a signed-in admin: a Better Auth user with role `admin`
+ * and a session that lasts `sessionMs`, else one that never expires.
+ *
+ * The default can't be any fixed length. While a scheduled function runs,
+ * `finishAllScheduledFunctions` advances the fake timers on every real
+ * event-loop turn, so a drain moves the fake clock by an amount that depends
+ * on how slow the host is: a 1.5 s stall in one function moves it over a day.
+ * A session counted in fake time would then expire mid-test, and the next
+ * admin call would fail as `unauthorized`.
+ */
+export async function asAdmin(t: Backend, sessionMs?: number) {
   const { userId, sessionId } = await t.run(async (ctx) => {
     const now = Date.now();
     const create = (input: object) => ctx.runMutation(components.betterAuth.adapter.create, { input } as never) as Promise<{ _id: string }>;
@@ -47,7 +60,7 @@ export async function asAdmin(t: Backend, sessionMs = 3_600_000) {
     });
     const session = await create({
       model: 'session',
-      data: { userId: user._id, token: 'session-token', expiresAt: now + sessionMs, createdAt: now, updatedAt: now },
+      data: { userId: user._id, token: 'session-token', expiresAt: sessionMs === undefined ? LAST_DATE_MS : now + sessionMs, createdAt: now, updatedAt: now },
     });
     return { userId: user._id, sessionId: session._id };
   });

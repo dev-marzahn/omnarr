@@ -101,8 +101,7 @@ export function pipelineHarness() {
   beforeEach(async () => {
     vi.useFakeTimers();
     h.t = setup();
-    // Settling moves the fake clock on; a month outlasts any test's runs.
-    h.admin = await asAdmin(h.t, 30 * 86_400_000);
+    h.admin = await asAdmin(h.t);
     h.libraries = await seedLibraries(h.t);
   });
   afterEach(() => {

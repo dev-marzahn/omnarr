@@ -92,6 +92,13 @@ describe('scan.start', () => {
     expect(await items(first)).toEqual([]);
   });
 
+  test('the admin can still start a scan after a drain moved the clock a year on', async () => {
+    // A drain moves the fake clock with real time (see asAdmin): on a slow
+    // host by hours. The admin's session must not count that time.
+    vi.advanceTimersByTime(365 * 86_400_000);
+    await startScan();
+  });
+
   test('only an admin can start a scan; a worker is refused', async () => {
     await expect(t.mutation(api.api.scan.start, { trigger: 'manual' })).rejects.toThrow();
   });
@@ -633,8 +640,7 @@ describe('run states, the repeat setting and access', () => {
       vi.advanceTimersByTime(3_600_000);
       await t.finishAllScheduledFunctions(() => vi.advanceTimersByTime(60_000));
     }
-    // The admin's session has expired by now, so the run is read directly.
-    expect(await t.run(async (ctx) => (await ctx.db.query('scanRuns').first())!.state)).toBe('failed');
+    expect((await admin.query(api.api.scan.status, {})).run).toMatchObject({ state: 'failed' });
   });
 
   test('the daily check starts a periodic run when the schedule is due, never over a review in progress', async () => {
