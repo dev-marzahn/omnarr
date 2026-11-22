@@ -23,6 +23,12 @@ export const SITES = [{ kind: 'nyaa', label: 'Nyaa', description: 'Anime, search
   description: string;
 }[];
 
+/**
+ * The Name after the picked site changes: an empty Name, or one the form filled in itself, becomes the new site's
+ * name (empty when there is none yet, as for "Other site" before a definition is picked); a typed Name stays.
+ */
+export const siteName = (name: string, filled: string, next: string): string => (name === '' || name === filled ? next : name);
+
 /** What a passed site test shows: what the site searches and its categories. */
 export const siteTestText = (kind: (typeof SITES)[number]['kind']) =>
   ({ nyaa: { title: 'Nyaa: anime, search by title', categories: ['Anime (series)', 'Anime (movies)'] } })[kind];

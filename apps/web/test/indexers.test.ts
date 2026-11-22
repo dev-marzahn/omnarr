@@ -13,6 +13,7 @@ import {
   pacingText,
   rateLimitText,
   removeConfirm,
+  siteName,
   SITES,
   siteTestText,
 } from '../lib/indexers';
@@ -194,6 +195,16 @@ describe('site indexers', () => {
 
   test('a passed site test says what the site searches, and its categories', () => {
     expect(siteTestText('nyaa')).toEqual({ title: 'Nyaa: anime, search by title', categories: ['Anime (series)', 'Anime (movies)'] });
+  });
+
+  test.each([
+    ['an empty Name takes the site', '', '', 'Nyaa', 'Nyaa'],
+    ['switching to "Other site" clears the Name the form filled', 'Nyaa', 'Nyaa', '', ''],
+    ['picking Nyaa again replaces a filled definition name', 'Lantern', 'Lantern', 'Nyaa', 'Nyaa'],
+    ['a typed Name stays on "Other site"', 'My anime', 'Nyaa', '', 'My anime'],
+    ['a typed Name stays on another site', 'My anime', '', 'Nyaa', 'My anime'],
+  ])('Name when the site changes: %s', (_, name, filled, next, expected) => {
+    expect(siteName(name, filled, next)).toBe(expected);
   });
 });
 

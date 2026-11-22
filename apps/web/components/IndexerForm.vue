@@ -9,7 +9,7 @@
 import { api } from '@omnarr/backend/api';
 import type { IndexerDetail, IndexerKind, IndexerTestResult, SiteSettings } from '@omnarr/contracts';
 
-import { BUSY_TEXT, capsBlock, failureText, healthBlock, indexerErrorText, parseCategories, SITES, siteTestText } from '~/lib/indexers';
+import { BUSY_TEXT, capsBlock, failureText, healthBlock, indexerErrorText, parseCategories, SITES, siteName, siteTestText } from '~/lib/indexers';
 import { initialSettings, settingsToSend } from '~/lib/sites';
 
 const props = defineProps<{ indexer?: IndexerDetail }>();
@@ -34,13 +34,15 @@ const definitionId = ref<string | undefined>(props.indexer?.site?.definitionId);
 const { data: definition } = useQuery(api.sites.definitions.get, () => (definitionId.value ? { definitionId: definitionId.value } : 'skip'));
 const baseUrl = ref(props.indexer?.site?.baseUrl ?? '');
 const siteSettings = ref<SiteSettings>({});
+/** The Name the form filled in itself, so a change of site can replace it without touching a typed one. */
+let filledName = '';
 watch(
   definition,
   (next) => {
     if (!next) return;
     if (!next.meta.links.includes(baseUrl.value) && baseUrl.value !== props.indexer?.site?.baseUrl) baseUrl.value = next.meta.links[0] ?? '';
     siteSettings.value = initialSettings(next.meta, props.indexer?.site?.settings);
-    if (!props.indexer) state.name = next.name;
+    if (!props.indexer) state.name = filledName = next.name;
   },
   { immediate: true },
 );
@@ -81,9 +83,12 @@ watch(
 
 /** The form's link and settings to send: an empty secret keeps the stored one. */
 const siteValues = () => ({ baseUrl: baseUrl.value, settings: definition.value ? settingsToSend(definition.value.meta, siteSettings.value) : {} });
-watch(source, (next) => {
-  // A site has its own name and its anime defaults, until the user changes them.
-  if (next === 'site' && !state.name && site.value !== 'catalogue') state.name = SITES.find((s) => s.kind === site.value)?.label ?? '';
+watch([source, site], () => {
+  // A site names itself until the user types a name; "Other site" has no name until a definition is picked.
+  if (props.indexer || !isSite.value) return;
+  const next = site.value === 'catalogue' ? (definition.value?.name ?? '') : (SITES.find((s) => s.kind === site.value)?.label ?? '');
+  state.name = siteName(state.name, filledName, next);
+  filledName = next;
 });
 
 async function runTest() {
@@ -215,7 +220,15 @@ const kinds = [
 
 <template>
   <UForm :state="state" class="space-y-4" @submit="save">
-    <URadioGroup v-if="!indexer" v-model="source" legend="Type" orientation="horizontal" variant="card" :items="sources" />
+    <URadioGroup
+      v-if="!indexer"
+      v-model="source"
+      legend="Type"
+      orientation="horizontal"
+      variant="card"
+      :items="sources"
+      :ui="{ fieldset: 'grid gap-2 sm:grid-cols-2' }"
+    />
     <URadioGroup v-if="!indexer && isSite" v-model="site" legend="Site" :items="sites" />
     <SiteDefinitionPicker v-if="!indexer && isDefinition" v-model="definitionId" />
 
