@@ -2,7 +2,8 @@
 import type { DownloadClientsDetail, FailureCode, JellyfinStatus, ScanStatus, SystemStatus } from '@omnarr/contracts';
 import { describe, expect, test } from 'vite-plus/test';
 
-import { addressLines, advanceTarget, canContinue, checklist, refusalText, routeFor, shouldStartScan, usenetSaved } from '../lib/firstRun';
+import { needsLoginTest } from '../lib/downloads';
+import { addressLines, advanceTarget, canContinue, checklist, refusalText, routeFor, shouldStartScan, usenetPrimary, usenetSaved } from '../lib/firstRun';
 
 describe('routeFor', () => {
   test('no admin: the create-admin page only', () => {
@@ -192,6 +193,36 @@ describe('usenetSaved', () => {
   test('no provider, or only a Test login (a row without a saved server), does not', () => {
     expect(usenetSaved(usenet({}))).toBe(false);
     expect(usenetSaved(usenet({ enabled: false, server }))).toBe(false);
+  });
+});
+
+describe('usenetPrimary', () => {
+  const server = { host: 'news.provider.example', port: 563, ssl: true, username: 'u', connections: 20, level: 0 };
+  const saved = {
+    enabled: true,
+    server,
+    hasPassword: true,
+    configVersion: 1,
+    config: 'applied',
+    backupServers: [],
+  } as unknown as DownloadClientsDetail['usenet'];
+  const form = { host: server.host, port: server.port, ssl: server.ssl, username: server.username, password: '', connections: server.connections };
+  // The form reports "unchanged" as the inverse of needsLoginTest.
+  const primary = (usenet: DownloadClientsDetail['usenet'], values: typeof form) => usenetPrimary(usenet, !needsLoginTest(values, usenet.server));
+
+  test('a saved provider and no edit: continuing is the primary action', () => {
+    expect(primary(saved, form)).toBe('continue');
+  });
+
+  test('after an edit, or a typed password, saving is primary again', () => {
+    expect(primary(saved, { ...form, host: 'eu.provider.example' })).toBe('save');
+    expect(primary(saved, { ...form, connections: 30 })).toBe('save');
+    expect(primary(saved, { ...form, password: 'secret' })).toBe('save');
+  });
+
+  test('no saved provider (or only a Test login): saving is primary', () => {
+    expect(primary({ ...saved, server: undefined }, form)).toBe('save');
+    expect(primary({ ...saved, enabled: false }, form)).toBe('save');
   });
 });
 

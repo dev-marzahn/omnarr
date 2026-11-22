@@ -3,7 +3,8 @@
   connections, "Test login", and the applied state. Save unlocks only after
   a passing test of the values on the form; a blank password keeps the
   stored one. It never names NZBGet's address or port. The first run's
-  Usenet step reuses it: pass `submitLabel` and listen for `saved`. With
+  Usenet step reuses it: pass `submitLabel` and `submitPrimary`, and listen
+  for `saved` and `unchanged`. With
   `backup` it edits that backup server the same way, with its own test and
   save, plus its priority and monthly limit, which save without a new test
   when the login is unchanged. The main server takes no limit: NZBGet never
@@ -20,12 +21,14 @@ const props = withDefaults(
     usenet: DownloadClientsDetail['usenet'];
     workerConnected: boolean;
     submitLabel?: string;
+    /** Whether the submit button is the solid primary; the first run's Usenet step lowers it while its continue button leads. */
+    submitPrimary?: boolean;
     /** A backup server: its id (the form makes a new one's) and, once saved, what is stored. */
     backup?: { id: string; server?: UsenetBackupServerDetail };
   }>(),
-  { submitLabel: 'Save', backup: undefined },
+  { submitLabel: 'Save', submitPrimary: true, backup: undefined },
 );
-const emit = defineEmits<{ saved: [] }>();
+const emit = defineEmits<{ saved: []; unchanged: [unchanged: boolean] }>();
 
 const testUsenetServer = useMutation(api.api.downloadClients.testUsenetServer);
 const saveUsenet = useMutation(api.api.downloadClients.saveUsenet);
@@ -78,6 +81,8 @@ const error = ref<string>();
 const complete = computed(() => state.host.trim() !== '' && state.port >= 1 && state.port <= 65_535 && state.connections >= 1);
 const limitValid = computed(() => settings.monthlyLimitGb === null || (settings.monthlyLimitGb > 0 && settings.resetDay >= 1 && settings.resetDay <= 28));
 const testNeeded = computed(() => needsLoginTest(values(), stored.value));
+/** `unchanged`: whether the login on the form is the stored one (a backup's priority and limit aside). */
+watch(testNeeded, (needed) => emit('unchanged', !needed), { immediate: true });
 const canSave = computed(
   () =>
     !testing.value &&
@@ -186,7 +191,14 @@ const usage = computed(() => usageText(props.backup?.server?.limit, props.backup
       </p>
       <slot name="actions" />
       <UButton color="neutral" variant="outline" icon="i-lucide-log-in" label="Test login" :loading="testing" :disabled="!complete" @click="runTest" />
-      <UButton type="submit" :label="submitLabel" :loading="saving" :disabled="!canSave" />
+      <UButton
+        type="submit"
+        :color="submitPrimary ? 'primary' : 'neutral'"
+        :variant="submitPrimary ? 'solid' : 'outline'"
+        :label="submitLabel"
+        :loading="saving"
+        :disabled="!canSave"
+      />
     </div>
   </UForm>
 </template>

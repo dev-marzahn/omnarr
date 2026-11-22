@@ -94,6 +94,13 @@ export function checklist(status: SystemStatus, clients: DownloadClientsDetail, 
  */
 export const usenetSaved = (usenet: DownloadClientsDetail['usenet']): boolean => usenet.enabled && usenet.server !== undefined;
 
+/**
+ * The Usenet step's primary button: "Continue with the saved provider" while a saved provider's form is unchanged
+ * (then "Save and continue" is disabled), else "Save and continue".
+ */
+export const usenetPrimary = (usenet: DownloadClientsDetail['usenet'], unchanged: boolean): 'continue' | 'save' =>
+  usenetSaved(usenet) && unchanged ? 'continue' : 'save';
+
 const ended = (scan: ScanStatus) => scan.run?.trigger === 'firstRun' && ['ready', 'failed', 'cancelled'].includes(scan.run.state);
 
 /** The finish step starts `scan.start('firstRun')` once, when no first-run scan exists. */

@@ -1,11 +1,12 @@
 <!--
   The Usenet provider: the UsenetProviderForm, with "Test login" and the applied state; saving moves on. A provider already
-  saved (in Settings, or on an earlier visit) moves on without a new save.
+  saved (in Settings, or on an earlier visit) moves on without a new save: while the form is unchanged, "Continue with the
+  saved provider" is the primary button, and "Save and continue" (disabled until an edit) steps back.
 -->
 <script setup lang="ts">
 import { api } from '@omnarr/backend/api';
 
-import { COPY, usenetSaved } from '~/lib/firstRun';
+import { COPY, usenetPrimary, usenetSaved } from '~/lib/firstRun';
 
 definePageMeta({ layout: 'setup', step: 'usenet' });
 
@@ -13,6 +14,8 @@ const { data } = useQuery(api.api.downloadClients.get, {});
 const { data: status } = useQuery(api.api.system.status, {});
 const workerConnected = computed(() => status.value?.worker?.connected === true && status.value.worker.accepted);
 const advance = useAdvance();
+const unchanged = ref(true);
+const primary = computed(() => (data.value ? usenetPrimary(data.value.usenet, unchanged.value) : 'save'));
 </script>
 
 <template>
@@ -22,15 +25,22 @@ const advance = useAdvance();
       <p class="text-sm text-muted">The server NZBGet downloads from. {{ COPY.usenetHint }}</p>
     </div>
     <UCard v-if="data">
-      <DownloadsUsenetProviderForm :usenet="data.usenet" :worker-connected="workerConnected" submit-label="Save and continue" @saved="advance('torrents')" />
+      <DownloadsUsenetProviderForm
+        :usenet="data.usenet"
+        :worker-connected="workerConnected"
+        submit-label="Save and continue"
+        :submit-primary="primary === 'save'"
+        @unchanged="unchanged = $event"
+        @saved="advance('torrents')"
+      />
     </UCard>
     <div class="flex items-center gap-2 max-lg:flex-col-reverse max-lg:items-stretch">
       <UButton color="neutral" variant="link" to="/setup/indexer" icon="i-lucide-arrow-left" label="Back" />
       <UButton
         v-if="data && usenetSaved(data.usenet)"
         class="lg:ms-auto max-lg:justify-center"
-        color="neutral"
-        variant="outline"
+        :color="primary === 'continue' ? 'primary' : 'neutral'"
+        :variant="primary === 'continue' ? 'solid' : 'outline'"
         label="Continue with the saved provider"
         @click="advance('torrents')"
       />
