@@ -157,15 +157,17 @@ const CALL_STATUS: Record<NonNullable<IndexerHealth['lastSearch']>['status'], st
   error: 'failed',
 };
 
+const count = (n: number, one: string): string => `${n} ${n === 1 ? one : `${one}s`}`;
+
 /** The form's Health block: the last search, the last RSS fetch and the day's errors. */
 export function healthBlock(detail: Pick<IndexerDetail, 'health' | 'errors24h'>, formatTime: (ms: number) => string): InfoRow[] {
   const { lastSearch, lastRss } = detail.health;
   return [
     {
       label: 'Last search',
-      value: lastSearch ? `${formatTime(lastSearch.at)} · ${CALL_STATUS[lastSearch.status]} · ${lastSearch.count} results` : 'None yet',
+      value: lastSearch ? `${formatTime(lastSearch.at)} · ${CALL_STATUS[lastSearch.status]} · ${count(lastSearch.count, 'result')}` : 'None yet',
     },
-    { label: 'Last RSS', value: lastRss ? `${formatTime(lastRss.at)} · ${lastRss.newItems} new items, ${lastRss.matched} matched` : 'None yet' },
+    { label: 'Last RSS', value: lastRss ? `${formatTime(lastRss.at)} · ${count(lastRss.newItems, 'new item')}, ${lastRss.matched} matched` : 'None yet' },
     { label: 'Errors (24 h)', value: String(detail.errors24h) },
   ];
 }

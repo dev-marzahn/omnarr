@@ -129,6 +129,19 @@ describe("the form's Caps and Health blocks", () => {
       { label: 'Errors (24 h)', value: '0' },
     ]);
   });
+
+  test('Health: a count of one is singular', () => {
+    const at = Date.UTC(2026, 10, 17, 16, 58);
+    const health = {
+      status: 'ok' as const,
+      lastSearch: { at, status: 'ok' as const, count: 1 },
+      lastRss: { at: Date.UTC(2026, 10, 17, 16, 45), newItems: 1, matched: 1 },
+    };
+    expect(healthBlock(detail({ health }), time).slice(0, 2)).toEqual([
+      { label: 'Last search', value: '16:58 · ok · 1 result' },
+      { label: 'Last RSS', value: '16:45 · 1 new item, 1 matched' },
+    ]);
+  });
 });
 
 describe('removeConfirm: the confirm before an indexer is removed names it', () => {
