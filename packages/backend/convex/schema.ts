@@ -298,6 +298,8 @@ export default defineSchema({
     cancelBlocklist: v.optional(v.boolean()),
     // Set by onRunPaused, cleared by supervision when the pause ends. A paused run doesn't count as "running".
     pausedAt: v.optional(v.number()),
+    // How often onRunComplete restarted a failed run from its failed step; capped by DEFAULT_LIMITS.runRestarts.
+    runRestarts: v.optional(v.number()),
     // Why a failed run failed: the next-best search raises it when nothing is left, and the timeline shows it.
     failureCode: v.optional(zodToConvex(FailureCode)),
     // A manual grab of a release whose numbers didn't decide it: its one video is imported as these Units.

@@ -3,7 +3,7 @@
 // run wherever it waits; onRunPaused and endPauses track runs that can't
 // replay.
 import { type PauseInfo, sendEvent, vResultValidator, vWorkflowId } from '@dev-marzahn/convex-workflow-migrations';
-import { downloadEventName, FAILURE_CLASS, type FailureCode, type JobEventValue, PipelineRunResult, raiseRule } from '@omnarr/contracts';
+import { DEFAULT_LIMITS, downloadEventName, FAILURE_CLASS, type FailureCode, type JobEventValue, PipelineRunResult, raiseRule } from '@omnarr/contracts';
 import { v } from 'convex/values';
 
 import { components, internal } from '../_generated/api';
@@ -183,7 +183,7 @@ async function unknownDetailOf(ctx: MutationCtx, grabId: Id<'grabs'>): Promise<s
  * the 3-Grab limit a next-best search starts a new Grab, at the limit the
  * failure is raised. Any other class is raised when `raiseRule` says so.
  */
-async function failed(ctx: MutationCtx, grab: Doc<'grabs'>, code: FailureCode): Promise<void> {
+async function failed(ctx: MutationCtx, grab: Doc<'grabs'>, code: FailureCode, why?: string): Promise<void> {
   const rows = await endGrab(ctx, grab, 'failed', 'The run failed.', code);
   // A failure after import (publish) concerns the imported Units too; skipped ones are out of the Grab.
   const unitIds = rows.filter((row) => row.outcome !== 'skipped').map((row) => row.unitId);
@@ -215,7 +215,7 @@ async function failed(ctx: MutationCtx, grab: Doc<'grabs'>, code: FailureCode): 
     // An unknown client state is cleaned up like a bad release, without a blocklist entry or next-best.
     const unknown = code === 'unknownClientFailure';
     if (FAILURE_CLASS[code] !== 'system' || unknown) await cleanUp(ctx, grab._id);
-    const detail = unknown ? await unknownDetailOf(ctx, grab._id) : undefined;
+    const detail = unknown ? await unknownDetailOf(ctx, grab._id) : why;
     // An upgrade raises only pipelineError (and workflowPaused, on its pause): the Unit still plays.
     const raises = grab.kind !== 'upgrade' || code === 'pipelineError';
     if (raises && raiseRule(code, { lastAttempt: true }))
@@ -227,12 +227,84 @@ async function failed(ctx: MutationCtx, grab: Doc<'grabs'>, code: FailureCode): 
   );
 }
 
+/** An Issue detail fits on the Unit page: the error's first line, at most this long. */
+const DETAIL_CHARS = 300;
+
+/** The run's error as a sentence: its first line, without the `Error:` its class name adds. */
+const errorDetail = (prefix: string, error: string): string =>
+  `${prefix}: ${error
+    .split('\n')[0]!
+    .replace(/^(Uncaught )?\w*Error: /, '')
+    .trim()}`.slice(0, DETAIL_CHARS);
+
+/**
+ * Schedules the restart of a failed run, when it has restarts left. The
+ * workflow component never retries a mutation, so one step (or replay of the
+ * handler) that ran out of Convex's conflict retries fails the whole run. The
+ * restart waits a backoff that doubles each time, so it doesn't meet the same
+ * contention. A failed mutation committed nothing, so running it again is
+ * safe; the steps before it keep their journal entries and replay their
+ * results, so no job is enqueued twice. Returns whether a restart was
+ * scheduled.
+ */
+async function scheduleRestart(ctx: MutationCtx, grab: Doc<'grabs'>, error: string): Promise<boolean> {
+  const restarts = grab.runRestarts ?? 0;
+  if (!grab.workflowId || restarts >= DEFAULT_LIMITS.runRestarts) return false;
+  const {
+    page: [last],
+  } = await workflow.listSteps(ctx, grab.workflowId, { order: 'desc', paginationOpts: { cursor: null, numItems: 1 } });
+  // A failed step is run again; a failed replay of the handler replays the same history.
+  const fromStep = last?.runResult?.kind === 'failed' ? last.stepNumber : undefined;
+  const delayMs = DEFAULT_LIMITS.runRestartBackoffMs * 2 ** restarts;
+  await ctx.db.patch(grab._id, { runRestarts: restarts + 1 });
+  await ctx.scheduler.runAfter(delayMs, internal.pipeline.grabs.restartRun, { grabId: grab._id, error, ...(fromStep !== undefined ? { fromStep } : {}) });
+  const how = fromStep !== undefined ? 'Running the failed step again' : 'Replaying the run';
+  await appendEvent(ctx, {
+    grabId: grab._id,
+    stage: 'grab',
+    kind: 'retry',
+    message: `${errorDetail('The run failed', error)}. ${how} in ${delayMs / 1000} s (${restarts + 1} of ${DEFAULT_LIMITS.runRestarts}).`,
+    data: { attempt: restarts + 1 },
+  });
+  return true;
+}
+
+/**
+ * Scheduled by `scheduleRestart`: restarts the run, unless the Grab ended
+ * meanwhile (a cancel). A restart that throws (the migrations package
+ * refuses `from` on a run whose migrations edited its history) ends the
+ * Grab with the run's error instead, so its Units are freed.
+ */
+export const restartRun = internalMutation({
+  args: { grabId: v.id('grabs'), error: v.string(), fromStep: v.optional(v.number()) },
+  returns: v.null(),
+  handler: async (ctx, { grabId, error, fromStep }) => {
+    const grab = await ctx.db.get(grabId);
+    if (!grab?.workflowId || FINAL.has(grab.state)) return null;
+    try {
+      await workflow.restart(ctx, grab.workflowId, { ...(fromStep !== undefined ? { from: fromStep } : {}), startAsync: true });
+    } catch (restartError) {
+      console.error(`restartRun: Grab ${grabId}`, restartError);
+      await failed(ctx, grab, 'pipelineError', errorDetail('The run failed', error));
+    }
+    return null;
+  },
+});
+
+/** The Issue detail of a `pipelineError` a job reported: the job's last error. */
+async function jobErrorOf(ctx: MutationCtx, jobId: Id<'jobs'> | undefined): Promise<string> {
+  const job = jobId && (await ctx.db.get(jobId));
+  return job?.lastError?.split('\n')[0]!.trim().slice(0, DETAIL_CHARS) || 'The worker reported a pipeline error without a detail.';
+}
+
 /**
  * The run's completion. A Grab with `cancelRequested` is
  * cancelled whatever the result kind, so a paused run ended with
- * `workflow.fail` doesn't raise `pipelineError`. A handler that threw is a
- * `pipelineError`. The body is wrapped: the component keeps an onComplete
- * error where nothing reads it, so it is raised instead.
+ * `workflow.fail` doesn't raise `pipelineError`. A handler that threw
+ * restarts from its failed step (`scheduleRestart`), and past the limit is a
+ * `pipelineError` carrying the error; a job's `pipelineError` carries the
+ * job's last error. The body is wrapped: the component
+ * keeps an onComplete error where nothing reads it, so it is raised instead.
  */
 export const onRunComplete = internalMutation({
   args: { workflowId: vWorkflowId, result: vResultValidator, context: v.object({ grabId: v.id('grabs') }) },
@@ -243,8 +315,13 @@ export const onRunComplete = internalMutation({
     try {
       const value = result.kind === 'success' ? PipelineRunResult.safeParse(result.returnValue) : undefined;
       if (grab.cancelRequested || result.kind === 'canceled' || value?.data?.outcome === 'cancelled') await cancelled(ctx, grab);
-      else if (result.kind === 'failed' || (value && !value.success)) await failed(ctx, grab, 'pipelineError');
-      else if (value?.data?.outcome === 'failed') await failed(ctx, grab, value.data.failureCode ?? 'pipelineError');
+      else if (result.kind === 'failed') {
+        if (!(await scheduleRestart(ctx, grab, result.error))) await failed(ctx, grab, 'pipelineError', errorDetail('The run failed', result.error));
+      } else if (value && !value.success) await failed(ctx, grab, 'pipelineError', 'The run ended with a result this version cannot read.');
+      else if (value?.data?.outcome === 'failed') {
+        const code = value.data.failureCode ?? 'pipelineError';
+        await failed(ctx, grab, code, code === 'pipelineError' ? await jobErrorOf(ctx, value.data.jobId) : undefined);
+      }
     } catch (error) {
       console.error(`onRunComplete: Grab ${grabId}`, error);
       for (const row of await ctx.db
@@ -281,6 +358,21 @@ export async function raiseNoneLeft(ctx: MutationCtx, attempt: Doc<'searchAttemp
 
 const RUN_JOBS = ['download.submit', 'import'] as const;
 
+/** Cancels the run's live jobs: a queued one ends with its event, a leased one is asked to stop. Returns whether one was live. */
+async function cancelRunJobs(ctx: MutationCtx, grabId: Id<'grabs'>): Promise<boolean> {
+  let live = false;
+  for (const cls of RUN_JOBS) {
+    const job = await ctx.db
+      .query('jobs')
+      .withIndex('by_idempotency_key', (q) => q.eq('idempotencyKey', `${grabId}:${cls}`))
+      .first();
+    if (job && (await cancelJob(ctx, job._id))) live = true;
+  }
+  // The publish job is keyed by its Publications.
+  for (const job of await runPublishJobs(ctx, grabId)) if (await cancelJob(ctx, job._id)) live = true;
+  return live;
+}
+
 /**
  * The one entry point for a cancel: unmonitoring every covered Unit,
  * deleting the Work, or the user. It does nothing once the run has finished.
@@ -293,24 +385,24 @@ export async function cancelGrab(ctx: MutationCtx, grabId: Id<'grabs'>, options:
   const grab = await ctx.db.get(grabId);
   if (!grab?.workflowId || FINAL.has(grab.state)) return false;
   const status = await workflow.status(ctx, grab.workflowId);
-  if (status.type !== 'inProgress') return false;
-  await ctx.db.patch(grabId, { cancelRequested: true, ...(options.blocklist ? { cancelBlocklist: true } : {}) });
+  // A failed run of a Grab that hasn't ended waits for its restart (scheduleRestart), or none is coming.
+  if (status.type !== 'inProgress' && status.type !== 'failed') return false;
+  const marks = { cancelRequested: true, ...(options.blocklist ? { cancelBlocklist: true } : {}) } as const;
+  await ctx.db.patch(grabId, marks);
   if (!grab.cancelRequested) await appendEvent(ctx, { grabId, stage: 'grab', kind: 'cancelled', message: 'Cancelling.' });
-  await recomputeUnits(ctx, await unitsOfGrab(ctx, grabId));
 
+  if (status.type === 'failed') {
+    // No run is left to end the Grab: its live job is cancelled, and the Grab ends here; the restart then does nothing.
+    await cancelRunJobs(ctx, grabId);
+    await cancelled(ctx, { ...grab, ...marks });
+    return true;
+  }
+  await recomputeUnits(ctx, await unitsOfGrab(ctx, grabId));
   if (grab.pausedAt !== undefined) {
     await workflow.fail(ctx, grab.workflowId, 'cancelled');
     return true;
   }
-  for (const cls of RUN_JOBS) {
-    const job = await ctx.db
-      .query('jobs')
-      .withIndex('by_idempotency_key', (q) => q.eq('idempotencyKey', `${grabId}:${cls}`))
-      .first();
-    if (job && (await cancelJob(ctx, job._id))) return true;
-  }
-  // The publish job is keyed by its Publications.
-  for (const job of await runPublishJobs(ctx, grabId)) if (await cancelJob(ctx, job._id)) return true;
+  if (await cancelRunJobs(ctx, grabId)) return true;
   if (grab.state === 'downloading') {
     const download = await ctx.db
       .query('downloads')

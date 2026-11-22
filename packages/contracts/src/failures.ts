@@ -202,6 +202,10 @@ export const DEFAULT_LIMITS = {
   maxAttempts: { 'download.submit': 5, import: 5, publish: 5, prepare: 2, maintenance: 3, indexer: 1 } satisfies Record<JobClass, number>,
   concurrency: { 'download.submit': 4, import: 2, prepare: 1, publish: 2, maintenance: 2, indexer: 4 } satisfies Record<JobClass, number>,
   badReleaseGrabs: 3,
+  // A Grab run whose step or replay failed (a mutation out of conflict retries) restarts from that step this many times, then fails.
+  runRestarts: 3,
+  // The wait before the first restart; it doubles for each next one.
+  runRestartBackoffMs: 5 * SECOND,
   torrentStallMs: 6 * HOUR,
   leaseMs: 60 * SECOND,
   heartbeatMs: 20 * SECOND,

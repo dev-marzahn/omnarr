@@ -228,15 +228,23 @@ test('a Usenet removal carries its folder only when it is under /data/downloads/
 });
 
 describe('pipelineError', () => {
-  test('a run whose handler threw is raised at once with retryRelease, and blocklists nothing', async () => {
+  test('a run whose handler threw past its restarts is raised with retryRelease and the error, and blocklists nothing', async () => {
     const [grab] = await grabs();
+    // Restarts are grabContention.test.ts's; this run has none left.
+    await h.t.run((ctx) => ctx.db.patch(grab!._id, { runRestarts: DEFAULT_LIMITS.runRestarts }));
     await h.t.mutation(internal.pipeline.grabs.onRunComplete, {
       workflowId: grab!.workflowId!,
       result: { kind: 'failed', error: 'boom' },
       context: { grabId: grab!._id },
     });
     expect(await openIssues()).toEqual([
-      expect.objectContaining({ failureCode: 'pipelineError', class: 'system', scope: 'unit', fixActions: ['retryRelease', 'dismiss'] }),
+      expect.objectContaining({
+        failureCode: 'pipelineError',
+        class: 'system',
+        scope: 'unit',
+        fixActions: ['retryRelease', 'dismiss'],
+        detail: 'The run failed: boom',
+      }),
     ]);
     expect(await h.all('blocklist')).toEqual([]);
     expect((await grabs())[0]).toMatchObject({ state: 'failed', failureCode: 'pipelineError' });
