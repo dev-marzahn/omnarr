@@ -6,7 +6,9 @@
 #              digests; skipped when no release exists yet. A failure stops
 #              the release before any tag points at the images.
 #   3. Pin     tag the images, write their digests into compose.yml, commit
-#              "Release <version>" to main and tag v<version>
+#              "Release <version>" on top of main and push only the tag
+#              v<version>: main's ruleset refuses a direct push, so the
+#              release commit lives on its tag, not on main
 #   4. Release the GitHub release with compose.yml, compose.vpn.yml and .env.example
 #
 # The built-in TMDB token is the repository secret TMDB_TOKEN, passed to the
@@ -96,7 +98,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          from=$(gh release list --limit 100 --json tagName --jq '.[].tagName' | grep -vx "v$VERSION" | head -n 1 | sed 's/^v//')
+          from=$(gh release list --exclude-drafts --limit 100 --json tagName --jq '.[].tagName' | grep -Fvx "v$VERSION" | head -n 1 | sed 's/^v//')
           echo "version=$from" >> "$GITHUB_OUTPUT"
           if [ -z "$from" ]; then echo "No release yet: the upgrade test is skipped."; fi
       - name: stackUpgrade
@@ -146,13 +148,23 @@ jobs:
         run: |
           node scripts/pin-images.ts --version "$VERSION" --digests "$RUNNER_TEMP/digests.json"
           node scripts/check-ports.ts
+      # Only the tag is pushed: main's ruleset admits nothing but merged pull
+      # requests, and tags have no rules. A re-run whose tag is already on
+      # origin releases that tag's commit instead of making a second one.
       - name: Commit and tag
         run: |
+          if git ls-remote --exit-code --tags origin "refs/tags/v$VERSION" > /dev/null; then
+            echo "v$VERSION is already on origin: releasing its commit."
+            git fetch --force origin "refs/tags/v$VERSION:refs/tags/v$VERSION"
+            git switch --detach --discard-changes "v$VERSION"
+            exit 0
+          fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch --detach
           git commit -am "Release $VERSION"
           git tag "v$VERSION"
-          git push origin main "v$VERSION"
+          git push origin "refs/tags/v$VERSION"
       - name: Create the GitHub release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -160,7 +172,9 @@ jobs:
         run: |
           prerelease=""
           case "$VERSION" in *-*) prerelease="--prerelease" ;; esac
-          previous=$(git describe --tags --abbrev=0 HEAD~1 2>/dev/null || true)
+          # The newest GitHub release before this one: its tag's commit is
+          # off main, so git describe from HEAD wouldn't find it.
+          previous=$(gh release list --exclude-drafts --limit 100 --json tagName --jq '.[].tagName' | grep -Fvx "v$VERSION" | head -n 1 || true)
           notes="$RUNNER_TEMP/notes.md"
           : > "$notes"
           # A raised Jellyfin major version can't be rolled back: the notes open by asking for its config backup.
@@ -171,7 +185,7 @@ jobs:
           fi
           # Every pin that changed since the previous release.
           echo "Pins:" >> "$notes"
-          git diff --unified=0 ${previous:-HEAD~1} -- compose.yml compose.vpn.yml | grep '^+ *image:' | sed 's/^+ *image: */- /' | sort -u >> "$notes"
+          git diff --unified=0 "${previous:-HEAD~1}" -- compose.yml compose.vpn.yml | grep '^+ *image:' | sed 's/^+ *image: */- /' | sort -u >> "$notes"
           # The worker's ffmpeg configure line and Debian package versions, for the source offer.
           image="$REGISTRY/omnarr-worker@$WORKER"
           { echo; echo "ffmpeg in the worker image:"; echo '```'; docker run --rm --entrypoint cat "$image" /licenses/ffmpeg-configure.txt; echo '```'
