@@ -15,7 +15,7 @@ services:
   # The one-shot setup container: secrets, the setup password, the /data tree and ./definitions, the
   # clients' control keys and the owners. It runs, as root, before everything else on every `up`.
   setup:
-    image: ghcr.io/dev-marzahn/omnarr-worker:100.0.0@sha256:655e128133ad5d57a90288ebc454194a99743c7c415681f65c9a10a056e8085a
+    image: ghcr.io/dev-marzahn/omnarr-worker:100.0.1@sha256:0384eb392a089bbe1275f1028b9347198604b133c059d0573972f12fff2cc543
     command: ['setup']
     user: '0:0'
     restart: 'no'
@@ -46,7 +46,7 @@ services:
   # start it sets the deployment variables (pre-push hook), applies the release, runs the reference
   # seeds (post-apply hook), and only then reports healthy. The admin key never leaves it.
   backend:
-    image: ghcr.io/dev-marzahn/omnarr-backend:100.0.0@sha256:6ebd5b4f890a50b9b1a1e3151b91eca6df721e07881454c31601f1d739783b78
+    image: ghcr.io/dev-marzahn/omnarr-backend:100.0.1@sha256:2da65546d0801a5ae973e4757b7f8a2d534af46e9fd49d176a402f57c7030336
     restart: unless-stopped
     environment:
       INSTANCE_NAME: omnarr
@@ -83,7 +83,7 @@ services:
       setup: { condition: service_completed_successfully }
 
   worker:
-    image: ghcr.io/dev-marzahn/omnarr-worker:100.0.0@sha256:655e128133ad5d57a90288ebc454194a99743c7c415681f65c9a10a056e8085a
+    image: ghcr.io/dev-marzahn/omnarr-worker:100.0.1@sha256:0384eb392a089bbe1275f1028b9347198604b133c059d0573972f12fff2cc543
     restart: unless-stopped
     user: ${PUID:-1000}:${PGID:-1000}
     environment:
@@ -105,7 +105,7 @@ services:
   # The web app: it reads the URLs from its environment when it starts. Unset, the browser
   # builds each from its own address and the port.
   web:
-    image: ghcr.io/dev-marzahn/omnarr-web:100.0.0@sha256:9b224fb805e0f95edd108416390568ecf4007b44ddb18772fc1ae6016e54335b
+    image: ghcr.io/dev-marzahn/omnarr-web:100.0.1@sha256:229f49323d293235da21477b50ee83699ad19d812e16ea8113c4922151b4e022
     restart: unless-stopped
     environment:
       NUXT_PUBLIC_WEB_URL: ${OMNARR_WEB_URL:-}
