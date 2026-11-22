@@ -57,7 +57,10 @@ let e1: string;
 let exported: string;
 /** The secrets the stack generated on the previous release. */
 let before: Pick<typeof secrets, 'workerToken' | 'betterAuthSecret' | 'instanceSecret'>;
+/** Each Grab's kind on the previous release, by id (null where it has none). */
+let grabsBefore: Record<string, string | null>;
 
+const grabKinds = () => Object.fromEntries(rows<{ _id: string; kind?: string }>(d.env, 'grabs').map((grab) => [grab._id, grab.kind ?? null]));
 const unitE1 = async () => (await query('api/library:detail', { workId })).units.find((row: Any) => row.tmdbSeason === 1 && row.tmdbEpisode === 1);
 const volume = (name: string) => `${PROJECT}_${name}`;
 const docker = (args: string[]) => execFileSync('docker', args, { encoding: 'utf8' }).trim();
@@ -86,6 +89,8 @@ beforeAll(async () => {
   );
   e1 = ready.unitId;
   before = { workerToken: secrets.workerToken, betterAuthSecret: secrets.betterAuthSecret, instanceSecret: secrets.instanceSecret };
+  grabsBefore = grabKinds();
+  expect(Object.keys(grabsBefore)).not.toHaveLength(0);
 }, 1_800_000);
 afterAll(async () => {
   if (process.env.E2E_KEEP === '1') return;
@@ -169,8 +174,8 @@ describe('a downgrade by restore', () => {
     // The accounts came back with the export: the admin signs in with the same password.
     await d.admin.signIn(ADMIN.password);
     expect(await unitE1()).toMatchObject({ unitId: e1, state: 'ready', monitored: true });
-    // The data from before the migration: the previous release's Grabs have no kind.
-    expect(rows<{ kind?: string }>(d.env, 'grabs').every((grab) => grab.kind === undefined)).toBe(true);
+    // The data from before the upgrade: the same Grabs with the kinds they had then (none on a release older than 0004_grab_kind).
+    expect(grabKinds()).toEqual(grabsBefore);
     // The kept copy is still there for the user to remove.
     expect(docker(['volume', 'ls', '-q', '--filter', `name=${volume('convex-data-before-restore')}`])).toBe(volume('convex-data-before-restore'));
   });
