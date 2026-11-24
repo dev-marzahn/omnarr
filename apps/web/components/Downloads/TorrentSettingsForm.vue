@@ -42,7 +42,7 @@ const saving = ref(false);
 const error = ref<string>();
 
 const peerPort = computed(() => peerPortText(props.torrents.peerPort, props.vpn?.runtime, props.vpn?.kind));
-const connection = computed(() => connectionStatusText(props.torrents.connectionStatus));
+const connection = computed(() => connectionStatusText(props.torrents.connectionStatus, props.torrents.peerPort, props.vpn?.runtime, props.vpn?.kind));
 // The seeding progress: "Seeding 3 torrents · 4.2 GB uploaded".
 const seedingText = computed(() => seedingSummary(props.torrents.seeding));
 

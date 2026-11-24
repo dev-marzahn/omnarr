@@ -153,8 +153,12 @@ export function providerTestText(test: ProviderTest, workerConnected: boolean): 
   }
 }
 
-export function testOfServer(test: ProviderTest | undefined, backupId: string | undefined): ProviderTest | undefined {
-  return test && test.backupId === backupId ? test : undefined;
+export function testOfServer(
+  test: ProviderTest | undefined,
+  backupId: string | undefined,
+  testOnOpen: ProviderTest['jobId'] | undefined,
+): ProviderTest | undefined {
+  return test && test.backupId === backupId && test.jobId !== testOnOpen ? test : undefined;
 }
 
 /** "15 Dec": a period boundary, a UTC day as the worker counts it. */
@@ -289,19 +293,48 @@ export function peerPortText(peerPort: number | undefined, vpn?: Pick<VpnRuntime
 
 export type ConnectionText = { color: 'success' | 'warning' | 'error' | 'neutral'; label: string; description?: string };
 
-const CONNECTION: Record<ConnectionStatus, ConnectionText> = {
-  connected: { color: 'success', label: 'Connected', description: 'Peers can connect to you.' },
-  firewalled: {
-    color: 'warning',
-    label: 'Firewalled',
-    description: "Peers can't connect to you, so torrents find fewer peers. Forward the peer port on your router.",
-  },
-  disconnected: { color: 'error', label: 'Disconnected', description: 'qBittorrent has no network connection.' },
-};
+const notConfirmedYet = (description: string): ConnectionText => ({ color: 'neutral', label: 'Not confirmed yet', description });
 
-/** qBittorrent's connection status; `firewalled` carries the forwarding hint. */
-export const connectionStatusText = (status: ConnectionStatus | undefined): ConnectionText =>
-  status ? CONNECTION[status] : { color: 'neutral', label: 'Not reported yet' };
+const untilAPeerConnectsIn = (fix: string): ConnectionText =>
+  notConfirmedYet(`No peer has connected in yet. qBittorrent confirms the port once one does. If this stays while torrents are active, ${fix}`);
+
+function firewalledText(peerPort: number | undefined, vpn: Pick<VpnRuntime, 'state' | 'port'> | undefined, kind: VpnKind | undefined): ConnectionText {
+  if (!vpn || vpn.state === 'off') return untilAPeerConnectsIn('forward the peer port on your router.');
+  const port = vpnPeerPort(vpn, peerPort);
+  if (port !== undefined) return untilAPeerConnectsIn(`check that ${forwarderName(kind)} forwards port ${port}.`);
+  if (vpn.state !== 'up') return notConfirmedYet('Peers can connect in once the VPN is up.');
+  if (vpn.port.kind === 'none')
+    return {
+      color: 'neutral',
+      label: 'No incoming peers',
+      description: "Your VPN doesn't forward a port, so peers can't connect in. Torrents work, with fewer peers.",
+    };
+  return notConfirmedYet('Waiting for the VPN to forward a port.');
+}
+
+export function connectionStatusText(
+  status: ConnectionStatus | undefined,
+  peerPort?: number,
+  vpn?: Pick<VpnRuntime, 'state' | 'port'>,
+  kind?: VpnKind,
+): ConnectionText {
+  switch (status) {
+    case 'connected':
+      return { color: 'success', label: 'Connected', description: 'Peers can connect to you.' };
+    case 'firewalled':
+      return firewalledText(peerPort, vpn, kind);
+    case 'disconnected':
+      return { color: 'error', label: 'Disconnected', description: 'qBittorrent has no network connection.' };
+    case undefined:
+      return { color: 'neutral', label: 'Not reported yet' };
+  }
+}
+
+export function nzbgetConnectionText(reachable: boolean | undefined, workerConnected: boolean): ConnectionText {
+  if (!workerConnected) return { color: 'neutral', label: 'Not checked', description: 'Checked once the worker connects.' };
+  if (reachable === undefined) return { color: 'neutral', label: 'Not reported yet' };
+  return reachable ? { color: 'success', label: 'NZBGet answers' } : { color: 'error', label: 'Unreachable', description: "The worker can't reach NZBGet." };
+}
 
 /** The switch stops new torrent Grabs only. */
 export const TORRENTS_OFF_TEXT = 'Turning torrents off stops new torrent grabs. Torrents already seeding keep seeding until their goals are met.';

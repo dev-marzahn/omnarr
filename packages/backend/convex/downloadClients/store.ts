@@ -88,6 +88,7 @@ export function toDetail(nzbget: Doc<'downloadClients'> | null, qbittorrent: Doc
       ...(nzbget?.appliedAt !== undefined ? { appliedAt: nzbget.appliedAt } : {}),
       ...(nzbget?.applyFailure ? { applyFailure: nzbget.applyFailure } : {}),
       ...(nzbget?.providerTest ? { providerTest: nzbget.providerTest } : {}),
+      ...(nzbget?.status ? { nzbgetReachable: nzbget.status.reachable } : {}),
       backupServers: backups.map(({ id, host, port, ssl, username, connections, password: secret, level, limit }, index) => ({
         id: id!,
         host,

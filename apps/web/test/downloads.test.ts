@@ -14,6 +14,7 @@ import {
   seedGoalFromValues,
   seedGoalValues,
   needsLoginTest,
+  nzbgetConnectionText,
   testOfServer,
   TORRENTS_OFF_TEXT,
   usageText,
@@ -180,15 +181,41 @@ describe('needsLoginTest: only a change to the login makes Save test it again', 
 
 describe('testOfServer: each form sees only its own server’s login test', () => {
   test("the main server's form sees a test that names no backup, not a backup's", () => {
-    expect(testOfServer(providerTest(), undefined)).toEqual(providerTest());
-    expect(testOfServer(providerTest({ backupId: 'b1' }), undefined)).toBeUndefined();
+    expect(testOfServer(providerTest(), undefined, undefined)).toEqual(providerTest());
+    expect(testOfServer(providerTest({ backupId: 'b1' }), undefined, undefined)).toBeUndefined();
   });
 
   test("a backup server's form sees only the test that names it", () => {
-    expect(testOfServer(providerTest({ backupId: 'b1' }), 'b1')).toEqual(providerTest({ backupId: 'b1' }));
-    expect(testOfServer(providerTest({ backupId: 'b2' }), 'b1')).toBeUndefined();
-    expect(testOfServer(providerTest(), 'b1')).toBeUndefined();
-    expect(testOfServer(undefined, 'b1')).toBeUndefined();
+    expect(testOfServer(providerTest({ backupId: 'b1' }), 'b1', undefined)).toEqual(providerTest({ backupId: 'b1' }));
+    expect(testOfServer(providerTest({ backupId: 'b2' }), 'b1', undefined)).toBeUndefined();
+    expect(testOfServer(providerTest(), 'b1', undefined)).toBeUndefined();
+    expect(testOfServer(undefined, 'b1', undefined)).toBeUndefined();
+  });
+
+  test('a later visit hides the test that was already there when the form opened, and shows the next one the user runs', () => {
+    const fromAnEarlierVisit = providerTest({ jobId: 'j1' as ProviderTest['jobId'] });
+    expect(testOfServer(fromAnEarlierVisit, undefined, fromAnEarlierVisit.jobId)).toBeUndefined();
+    const runOnThisVisit = providerTest({ jobId: 'j2' as ProviderTest['jobId'], outcome: 'pending' });
+    expect(testOfServer(runOnThisVisit, undefined, fromAnEarlierVisit.jobId)).toEqual(runOnThisVisit);
+  });
+});
+
+describe("nzbgetConnectionText: whether NZBGet answers the worker, never whether the server's login works", () => {
+  test.each([
+    [true, { color: 'success', label: 'NZBGet answers' }],
+    [false, { color: 'error', label: 'Unreachable', description: "The worker can't reach NZBGet." }],
+    [undefined, { color: 'neutral', label: 'Not reported yet' }],
+  ] as const)('reachable %s', (reachable, text) => {
+    expect(nzbgetConnectionText(reachable, true)).toEqual(text);
+  });
+
+  test("with the worker offline, its last reading isn't shown as current", () => {
+    for (const reachable of [true, false, undefined])
+      expect(nzbgetConnectionText(reachable, false)).toEqual({ color: 'neutral', label: 'Not checked', description: 'Checked once the worker connects.' });
+  });
+
+  test('no state mentions a login', () => {
+    for (const reachable of [true, false, undefined]) expect(Object.values(nzbgetConnectionText(reachable, true)).join(' ')).not.toMatch(/log/i);
   });
 });
 
@@ -374,22 +401,74 @@ describe('peerPortText', () => {
   });
 });
 
-// qBittorrent's connection status; firewalled shows the forwarding hint.
 describe('connectionStatusText', () => {
   test.each([
     ['connected', { color: 'success', label: 'Connected', description: 'Peers can connect to you.' }],
-    [
-      'firewalled',
-      {
-        color: 'warning',
-        label: 'Firewalled',
-        description: "Peers can't connect to you, so torrents find fewer peers. Forward the peer port on your router.",
-      },
-    ],
     ['disconnected', { color: 'error', label: 'Disconnected', description: 'qBittorrent has no network connection.' }],
     [undefined, { color: 'neutral', label: 'Not reported yet' }],
   ] as const)('%s', (status, text) => {
     expect(connectionStatusText(status)).toEqual(text);
+  });
+
+  test('firewalled without a VPN: not confirmed until a peer connects in, then the router hint', () => {
+    const text = {
+      color: 'neutral',
+      label: 'Not confirmed yet',
+      description:
+        'No peer has connected in yet. qBittorrent confirms the port once one does. If this stays while torrents are active, forward the peer port on your router.',
+    };
+    expect(connectionStatusText('firewalled', 51413)).toEqual(text);
+    expect(connectionStatusText('firewalled', 51413, { state: 'off', port: { kind: 'none' } })).toEqual(text);
+  });
+
+  const unconfirmedThroughVpn = (fix: string) => ({
+    color: 'neutral',
+    label: 'Not confirmed yet',
+    description: `No peer has connected in yet. qBittorrent confirms the port once one does. If this stays while torrents are active, ${fix}`,
+  });
+
+  test('firewalled through a VPN that is up with a forwarded port: that port, by who forwards it', () => {
+    expect(connectionStatusText('firewalled', 47568, { state: 'up', port: { kind: 'forwarded', port: 47568 } }, 'pia')).toEqual(
+      unconfirmedThroughVpn('check that PIA forwards port 47568.'),
+    );
+  });
+
+  test("firewalled through a config file's static port: that port, forwarded by your VPN", () => {
+    expect(connectionStatusText('firewalled', 51820, { state: 'up', port: { kind: 'static', port: 51820 } }, 'wireguardFile')).toEqual(
+      unconfirmedThroughVpn('check that your VPN forwards port 51820.'),
+    );
+  });
+
+  test('firewalled while the VPN waits for its forwarded port: no port to check yet', () => {
+    expect(connectionStatusText('firewalled', undefined, { state: 'up', port: { kind: 'waiting' } }, 'protonvpn')).toEqual({
+      color: 'neutral',
+      label: 'Not confirmed yet',
+      description: 'Waiting for the VPN to forward a port.',
+    });
+  });
+
+  test("firewalled through a VPN that forwards no port: no peer can connect in, which isn't a fault", () => {
+    expect(connectionStatusText('firewalled', undefined, { state: 'up', port: { kind: 'none' } }, 'wireguardFile')).toEqual({
+      color: 'neutral',
+      label: 'No incoming peers',
+      description: "Your VPN doesn't forward a port, so peers can't connect in. Torrents work, with fewer peers.",
+    });
+  });
+
+  test.each(['connecting', 'down', 'notActive'] as const)('firewalled through a VPN that is %s: no port is shown, so none is named', (state) => {
+    expect(connectionStatusText('firewalled', 47568, { state, port: { kind: 'forwarded', port: 47568 } }, 'pia')).toEqual({
+      color: 'neutral',
+      label: 'Not confirmed yet',
+      description: 'Peers can connect in once the VPN is up.',
+    });
+  });
+
+  test('no firewalled text through a VPN names the router', () => {
+    const states = ['up', 'connecting', 'down', 'notActive'] as const;
+    const ports = [{ kind: 'forwarded', port: 47568 }, { kind: 'static', port: 51820 }, { kind: 'waiting' }, { kind: 'none' }] as const;
+    for (const state of states)
+      for (const port of ports)
+        expect(connectionStatusText('firewalled', port.kind === 'none' ? undefined : 47568, { state, port }).description).not.toMatch(/router/);
   });
 });
 
