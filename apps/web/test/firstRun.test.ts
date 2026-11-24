@@ -185,11 +185,11 @@ describe('usenetSaved', () => {
     ({ enabled: false, hasPassword: false, configVersion: 0, config: 'pending', backupServers: [], ...overrides }) as DownloadClientsDetail['usenet'];
   const server = { host: 'news.provider.example', port: 563, ssl: true, username: 'u', connections: 20, level: 0 };
 
-  test('a provider saved in Settings lets the step continue without saving again', () => {
+  test('a main server saved, on the step or in Settings, shows the step its backup servers and Continue', () => {
     expect(usenetSaved(usenet({ enabled: true, server, hasPassword: true, configVersion: 1, config: 'applied' }))).toBe(true);
   });
 
-  test('no provider, or only a Test login (a row without a saved server), does not', () => {
+  test('no provider, or only a Test login (a row without a saved server), shows neither backup servers nor Continue', () => {
     expect(usenetSaved(usenet({}))).toBe(false);
     expect(usenetSaved(usenet({ enabled: false, server }))).toBe(false);
   });

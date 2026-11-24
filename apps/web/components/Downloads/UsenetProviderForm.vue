@@ -1,14 +1,3 @@
-<!--
-  The Usenet provider form: host, port, SSL, username, password and
-  connections, "Test login", and the applied state. Save unlocks only after
-  a passing test of the values on the form; a blank password keeps the
-  stored one. It never names NZBGet's address or port. The first run's
-  Usenet step reuses it: pass `submitLabel` and listen for `saved`. With
-  `backup` it edits that backup server the same way, with its own test and
-  save, plus its priority and monthly limit, which save without a new test
-  when the login is unchanged. The main server takes no limit: NZBGet never
-  uses a higher level while level 0 has no active server.
--->
 <script setup lang="ts">
 import { api } from '@omnarr/backend/api';
 import type { DownloadClientsDetail, UsenetBackupServerDetail, UsenetLimit } from '@omnarr/contracts';
@@ -19,11 +8,10 @@ const props = withDefaults(
   defineProps<{
     usenet: DownloadClientsDetail['usenet'];
     workerConnected: boolean;
-    submitLabel?: string;
     /** A backup server: its id (the form makes a new one's) and, once saved, what is stored. */
     backup?: { id: string; server?: UsenetBackupServerDetail };
   }>(),
-  { submitLabel: 'Save', backup: undefined },
+  { backup: undefined },
 );
 const emit = defineEmits<{ saved: [] }>();
 
@@ -186,7 +174,7 @@ const usage = computed(() => usageText(props.backup?.server?.limit, props.backup
       </p>
       <slot name="actions" />
       <UButton color="neutral" variant="outline" icon="i-lucide-log-in" label="Test login" :loading="testing" :disabled="!complete" @click="runTest" />
-      <UButton type="submit" :label="submitLabel" :loading="saving" :disabled="!canSave" />
+      <UButton type="submit" label="Save" :loading="saving" :disabled="!canSave" />
     </div>
   </UForm>
 </template>
