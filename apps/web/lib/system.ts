@@ -270,11 +270,11 @@ export function librarySizeView(size: LibrarySize | undefined, failed = false): 
   if (!size) return { rows: [{ label: 'Library', size: 'measuring…', part: false }], note: '' };
   return {
     rows: [
-      { label: 'Library', size: formatBytes(size.totalBytes), part: false },
+      { label: 'Library', size: `${formatBytes(size.totalBytes)} used`, part: false },
       { label: 'Series', size: formatBytes(size.seriesBytes), part: true },
       { label: 'Movies', size: formatBytes(size.moviesBytes), part: true },
     ],
-    note: `Measured ${time.format(size.measuredAt)}. Files omnarr doesn't track aren't counted.`,
+    note: `Measured ${time.format(size.measuredAt)}. Counts only the files omnarr tracks.`,
   };
 }
 

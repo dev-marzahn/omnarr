@@ -423,15 +423,15 @@ describe('the free-space card', () => {
     test('the total, then Series and Movies under it, and when it was measured', () => {
       const view = librarySizeView(size(4.2e12, 3e12, 1.2e12));
       expect(view.rows).toEqual([
-        { label: 'Library', size: '4.2 TB', part: false },
+        { label: 'Library', size: '4.2 TB used', part: false },
         { label: 'Series', size: '3.0 TB', part: true },
         { label: 'Movies', size: '1.2 TB', part: true },
       ]);
-      expect(view.note).toMatch(/^Measured .+\. Files omnarr doesn't track aren't counted\.$/);
+      expect(view.note).toMatch(/^Measured .+\. Counts only the files omnarr tracks\.$/);
     });
 
     test('an empty library shows 0 B, not a blank', () => {
-      expect(librarySizeView(size(0, 0, 0)).rows.map((row) => row.size)).toEqual(['0 B', '0 B', '0 B']);
+      expect(librarySizeView(size(0, 0, 0)).rows.map((row) => row.size)).toEqual(['0 B used', '0 B', '0 B']);
     });
 
     test('while it is measured: one Library line', () => {
