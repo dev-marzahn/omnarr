@@ -5,6 +5,7 @@ import type { DownloadClientsDetail, UsenetBackupServerDetail, UsenetLimit } fro
 import {
   configStateText,
   needsLoginTest,
+  nzbgetConnectionText,
   providerTestText,
   SAVE_CANCELLED_TEXT,
   saveStepAfterTest,
@@ -34,8 +35,9 @@ const saveUsenetBackup = useMutation(api.api.downloadClients.saveUsenetBackup);
 const stored = computed(() => (props.backup ? props.backup.server : props.usenet.server));
 const server = stored.value;
 const hasPassword = computed(() => (props.backup ? props.backup.server?.hasPassword === true : props.usenet.hasPassword));
-/** The row's latest test, if it was of this form's server. */
-const providerTest = computed(() => testOfServer(props.usenet.providerTest, props.backup?.id));
+const testOnOpen = props.usenet.providerTest?.jobId;
+const providerTest = computed(() => testOfServer(props.usenet.providerTest, props.backup?.id, testOnOpen));
+const nzbgetConnection = computed(() => (props.backup ? undefined : nzbgetConnectionText(props.usenet.nzbgetReachable, props.workerConnected)));
 const state = reactive({
   host: server?.host ?? '',
   port: server?.port ?? 563,
@@ -165,6 +167,15 @@ const usage = computed(() => usageText(props.backup?.server?.limit, props.backup
       <UFormField label="Resets on day" name="resetDay" help="Your plan's billing day." class="w-40">
         <UInputNumber v-model="settings.resetDay" :min="1" :max="28" :disabled="!settings.monthlyLimitGb" class="w-full" />
       </UFormField>
+    </div>
+    <div v-if="nzbgetConnection" class="flex items-start gap-4">
+      <div class="flex-1">
+        <p class="text-sm font-medium text-highlighted">Connection</p>
+        <p v-if="nzbgetConnection.description" class="text-xs" :class="nzbgetConnection.color === 'error' ? 'text-error' : 'text-muted'">
+          {{ nzbgetConnection.description }}
+        </p>
+      </div>
+      <UBadge size="sm" variant="subtle" :color="nzbgetConnection.color" :label="nzbgetConnection.label" />
     </div>
     <p v-if="usage" class="text-sm" :class="usage.startsWith('Limit reached') ? 'text-warning' : 'text-muted'">{{ usage }}</p>
 

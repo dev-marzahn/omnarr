@@ -389,6 +389,15 @@ describe('the worker exchange', () => {
     expect(usenet.applyFailure).toBeUndefined();
   });
 
+  test("the Usenet card carries whether NZBGet answered the worker's last check, and nothing before its first report", async () => {
+    await saveUsenet(provider);
+    expect((await get()).usenet.nzbgetReachable).toBeUndefined();
+    await w.reportClients([{ kind: 'nzbget', reachable: false, applyFailure: 'clientUnreachable' }]);
+    expect((await get()).usenet.nzbgetReachable).toBe(false);
+    await w.reportClients([{ kind: 'nzbget', reachable: true, appliedConfigVersion: 1 }]);
+    expect((await get()).usenet.nzbgetReachable).toBe(true);
+  });
+
   test('a save after an apply is pending again', async () => {
     await saveUsenet(provider);
     await w.reportClients([{ kind: 'nzbget', reachable: true, appliedConfigVersion: 1 }]);

@@ -56,6 +56,7 @@ describe('DownloadClientsDetail, the DTO', () => {
     hasPassword: true,
     configVersion: 2,
     config: 'applied',
+    nzbgetReachable: true,
     backupServers: [
       {
         id: 'b1',

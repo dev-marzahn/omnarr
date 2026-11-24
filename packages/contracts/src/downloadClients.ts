@@ -157,6 +157,7 @@ export const DownloadClientsDetail = z
         appliedAt: z.number().optional(),
         applyFailure: FailureCode.optional(),
         providerTest: ProviderTest.strict().optional(),
+        nzbgetReachable: z.boolean().optional(),
         /** Every backup server, one level below the main one; order doesn't matter in v1. */
         backupServers: z.array(UsenetBackupServerDetail),
       })
