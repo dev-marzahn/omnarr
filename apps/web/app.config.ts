@@ -11,5 +11,10 @@ export default defineAppConfig({
       error: 'red',
       neutral: 'slate',
     },
+    dashboardPanel: {
+      slots: {
+        body: 'scrollbar-gutter-stable',
+      },
+    },
   },
 });
