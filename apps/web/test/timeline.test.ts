@@ -210,9 +210,22 @@ describe('playText (the "Plays" block)', () => {
     );
   });
 
-  test('a transcode without reasons, and a direct stream', () => {
-    expect(playText(play({ method: 'transcode' }), time)).toBe('Spike Tablet · transcoded · 21:04');
+  test('a transcode without reasons', () => expect(playText(play({ method: 'transcode' }), time)).toBe('Spike Tablet · transcoded · 21:04'));
+
+  test('a remux says so, with its reason', () => {
+    expect(playText(play({ method: 'remux', reasons: ['container'] }), time)).toBe('Spike Tablet · remuxed: container · 21:04');
+    expect(playText(play({ deviceName: 'Z Flip8', method: 'remux', reasons: ['directPlayFailed'] }), time)).toBe(
+      'Z Flip8 · remuxed: direct play failed · 21:04',
+    );
+  });
+
+  test('a legacy row keeps its old wording: directStream may have converted the audio, so it never reads "remuxed"', () => {
     expect(playText(play({ method: 'directStream', reasons: ['container'] }), time)).toBe('Spike Tablet · direct stream: container · 21:04');
+  });
+
+  test('an old row\'s "other" still reads other, beside the specific reasons new rows carry', () => {
+    expect(playText(play({ method: 'directPlay', reasons: ['other'] }), time)).toBe('Spike Tablet · direct play: other · 21:04');
+    expect(playText(play({ method: 'transcode', reasons: ['other', 'interlaced'] }), time)).toBe('Spike Tablet · transcoded: other, interlaced video · 21:04');
   });
 
   test.each([
@@ -230,6 +243,18 @@ describe('playText (the "Plays" block)', () => {
     ['subtitle', 'subtitles'],
     ['bitrate', 'bitrate'],
     ['other', 'other'],
+    ['externalAudio', 'external audio'],
+    ['secondaryAudio', 'second audio track'],
+    ['refFrames', 'reference frames'],
+    ['anamorphic', 'anamorphic video'],
+    ['interlaced', 'interlaced video'],
+    ['audioSampleRate', 'audio sample rate'],
+    ['audioBitDepth', 'audio bit depth'],
+    ['unknownStream', 'unknown stream'],
+    ['directPlayFailed', 'direct play failed'],
+    ['videoCodecTag', 'video codec tag'],
+    ['streamCount', 'too many streams'],
+    ['videoRotation', 'rotated video'],
   ] as const)('the reason %s reads "%s"', (reason, text) => {
     expect(playText(play({ method: 'transcode', reasons: [reason] }), time)).toBe(`Spike Tablet · transcoded: ${text} · 21:04`);
   });

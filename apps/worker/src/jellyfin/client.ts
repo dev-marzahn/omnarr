@@ -17,7 +17,7 @@ import {
 
 import { JobFailure } from '../runtime/lease.ts';
 import type { PlaybackTarget } from '../targets/playbackTarget.ts';
-import { playMethod, transcodeReasons } from './reasons.ts';
+import { playMethod, type TranscodingInfo, transcodeReasons } from './reasons.ts';
 
 export type SetupPayload = Extract<MaintenancePayload, { action: 'setupJellyfin' }>;
 export type SetupResult = Extract<JobResult, { class: 'maintenance'; action: 'setupJellyfin' }>;
@@ -402,10 +402,10 @@ export function jellyfinClient(options: JellyfinOptions): JellyfinClient {
     Client: string;
     NowPlayingItem?: { Id: string };
     PlayState?: { PlayMethod?: string };
-    TranscodingInfo?: { TranscodeReasons?: string[] };
+    TranscodingInfo?: TranscodingInfo & { TranscodeReasons?: string[] };
   };
 
-  /** One `GET /Sessions`: the admin's sessions that play an item, with the method the client reported. */
+  /** One `GET /Sessions`: the admin's sessions that play an item, with how Jellyfin plays it (`playMethod`). */
   const observe: PlaybackTarget['observe'] = async (signal) => {
     const { authorization, connection } = readyKey();
     let sessions: Session[];
@@ -416,7 +416,7 @@ export function jellyfinClient(options: JellyfinOptions): JellyfinClient {
     }
     const plays: ActivePlay[] = [];
     for (const session of sessions) {
-      const method = playMethod(session.PlayState?.PlayMethod);
+      const method = playMethod(session.PlayState?.PlayMethod, session.TranscodingInfo);
       if (session.UserId !== connection.adminUserId || !session.NowPlayingItem || !method) continue;
       plays.push({
         deviceId: session.DeviceId,

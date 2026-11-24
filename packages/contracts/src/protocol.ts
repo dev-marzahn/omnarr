@@ -12,7 +12,7 @@ import { ActivePlay, ProbeSummary } from './playback.ts';
 import { SeedGoal } from './seedGoal.ts';
 
 /** Rises on any breaking change to this package. */
-export const PROTOCOL_VERSION = 2;
+export const PROTOCOL_VERSION = 3;
 
 /** The arguments every worker call carries. */
 export const WorkerCall = z.object({

@@ -8,9 +8,9 @@ import type {
   FailureCode,
   GrabCandidateResponse,
   LostOn,
-  PlayMethod,
   PlayRow,
   ScoreBreakdown,
+  StoredPlayMethod,
   Timeline,
   TimelineRun,
   TimelineSearch,
@@ -334,10 +334,12 @@ export function runHeader(run: TimelineRun, number: number): { label: string; st
 /** The run ID, as the copy button shows it: `k97f3a2c…c21`. */
 export const shortRunId = (grabId: string): string => (grabId.length > 14 ? `${grabId.slice(0, 8)}…${grabId.slice(-3)}` : grabId);
 
-const PLAY_METHODS: Record<PlayMethod, string> = {
+const PLAY_METHODS: Record<StoredPlayMethod, string> = {
   directPlay: 'direct play',
-  directStream: 'direct stream',
+  remux: 'remuxed',
   transcode: 'transcoded',
+  // A play stored before the method came from Jellyfin's transcode job; it may have converted the audio.
+  directStream: 'direct stream',
 };
 
 const TRANSCODE_REASONS: Record<TranscodeReason, string> = {
@@ -355,9 +357,24 @@ const TRANSCODE_REASONS: Record<TranscodeReason, string> = {
   subtitle: 'subtitles',
   bitrate: 'bitrate',
   other: 'other',
+  externalAudio: 'external audio',
+  secondaryAudio: 'second audio track',
+  refFrames: 'reference frames',
+  anamorphic: 'anamorphic video',
+  interlaced: 'interlaced video',
+  audioSampleRate: 'audio sample rate',
+  audioBitDepth: 'audio bit depth',
+  unknownStream: 'unknown stream',
+  directPlayFailed: 'direct play failed',
+  videoCodecTag: 'video codec tag',
+  streamCount: 'too many streams',
+  videoRotation: 'rotated video',
 };
 
-/** One line of "Plays": "Spike Tablet · direct play · 21:04", "Chrome · transcoded: audio codec · 21:04". */
+/**
+ * One line of "Plays": "Spike Tablet · direct play · 21:04", "Pixel ·
+ * remuxed: direct play failed · 21:04", "Chrome · transcoded: audio codec · 21:04".
+ */
 export function playText(play: PlayRow, formatTime: (ms: number) => string): string {
   const method = PLAY_METHODS[play.method];
   const how = play.reasons.length ? `${method}: ${play.reasons.map((reason) => TRANSCODE_REASONS[reason]).join(', ')}` : method;

@@ -44,7 +44,11 @@ export type FakeSession = {
   deviceId: string;
   deviceName: string;
   client: string;
-  playing?: { itemId: string; playMethod: string; transcodeReasons?: string[] };
+  /**
+   * `transcodeReasons` gives the session a `TranscodingInfo`; `copied` sets its
+   * `IsVideoDirect` and `IsAudioDirect` (the recording's: video copied, audio not).
+   */
+  playing?: { itemId: string; playMethod: string; transcodeReasons?: string[]; copied?: { video: boolean; audio: boolean } };
 };
 
 export type FakeJellyfin = {
@@ -186,7 +190,15 @@ export async function startFakeJellyfin(): Promise<FakeJellyfin> {
       ...base,
       PlayState: { ...recordedState, MediaSourceId: playing.itemId, PlayMethod: playing.playMethod },
       NowPlayingItem: { ...direct.NowPlayingItem, ServerId: fake.serverId, Id: playing.itemId },
-      ...(playing.transcodeReasons ? { TranscodingInfo: { ...transcoding.TranscodingInfo, TranscodeReasons: playing.transcodeReasons } } : {}),
+      ...(playing.transcodeReasons
+        ? {
+            TranscodingInfo: {
+              ...transcoding.TranscodingInfo,
+              ...(playing.copied && { IsVideoDirect: playing.copied.video, IsAudioDirect: playing.copied.audio }),
+              TranscodeReasons: playing.transcodeReasons,
+            },
+          }
+        : {}),
     };
   };
 

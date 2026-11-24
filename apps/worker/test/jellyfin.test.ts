@@ -416,11 +416,19 @@ describe('observe', () => {
     expect(await jellyfin.observe(signal)).toEqual([]);
   });
 
-  test('a direct stream is directStream', async () => {
+  test("the method is the transcode job's, not what the client reported", async () => {
+    const admin = connection!.adminUserId!;
+    const copied = { video: true, audio: true };
     fake.sessions = [
-      { ...TABLET, userId: connection!.adminUserId!, playing: { itemId: 'item-e1', playMethod: 'DirectStream', transcodeReasons: ['ContainerNotSupported'] } },
+      // The Android app's fallback after a failed direct play: it still reports DirectPlay while Jellyfin stream-copies.
+      { ...TABLET, userId: admin, playing: { itemId: 'item-e1', playMethod: 'DirectPlay', transcodeReasons: ['DirectPlayError'], copied } },
+      // Jellyfin's DirectStream converts the audio: a transcode in omnarr's terms.
+      { ...CHROME, userId: admin, playing: { itemId: 'item-e2', playMethod: 'DirectStream', transcodeReasons: ['AudioCodecNotSupported'] } },
     ];
-    expect(await jellyfin.observe(signal)).toMatchObject([{ method: 'directStream', reasons: ['container'] }]);
+    expect(await jellyfin.observe(signal)).toMatchObject([
+      { deviceName: 'Spike Tablet', method: 'remux', reasons: ['directPlayFailed'], rawReasons: ['DirectPlayError'] },
+      { deviceName: 'Chrome', method: 'transcode', reasons: ['audioCodec'] },
+    ]);
   });
 
   test('a refused key or no answer is a failure the poller can log, free of the URL and the key', async () => {

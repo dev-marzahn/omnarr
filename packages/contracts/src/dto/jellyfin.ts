@@ -3,7 +3,7 @@
 import { z } from 'zod';
 
 import { JellyfinState, SetupStepState } from '../jellyfin.ts';
-import { PlayMethod, TranscodeReason } from '../playback.ts';
+import { StoredPlayMethod, TranscodeReason } from '../playback.ts';
 
 /** `api.jellyfin.status`: `notSetUp` before `startSetup`. */
 export const JellyfinStatus = z
@@ -26,7 +26,7 @@ export const PlayRow = z
   .object({
     deviceName: z.string(),
     client: z.string(),
-    method: PlayMethod,
+    method: StoredPlayMethod,
     reasons: z.array(TranscodeReason),
     startedAt: z.number(),
     endedAt: z.number().optional(),
