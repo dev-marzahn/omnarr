@@ -8,7 +8,10 @@
 # fakes' folder is named by E2E_FAKES, an absolute path. What it changes:
 #
 # - the project's images are the ones up() builds (E2E_*_IMAGE);
-# - /data is a named volume (OMNARR_DATA_DIR=e2e-data), not a host folder;
+# - /data is the named volume e2e-data, not a host folder: each service that
+#   mounts it replaces the shipped bind (Compose merges mounts by target).
+#   OMNARR_DATA_DIR=e2e-data does the same for a release whose files still
+#   mount it in short syntax (stackUpgrade);
 # - the worker starts only with the `worker` profile, so the scenarios start
 #   it; `worker-old` poses as an older release;
 # - the fakes (TMDB, Newznab, NNTP, the Torznab fake, Nyaa, the web seed) and
@@ -19,6 +22,8 @@
 services:
   setup:
     image: ${E2E_WORKER_IMAGE:?}
+    volumes:
+      - e2e-data:/data
   backend:
     image: ${E2E_BACKEND_IMAGE:?}
     environment:
@@ -38,6 +43,8 @@ services:
       OMNARR_TEST_LIMITS: ${E2E_TEST_LIMITS:-}
       # The definitions come from the fake, never indexers.prowlarr.com, in every scenario.
       OMNARR_DEFINITIONS_URL: http://sites:4160
+    volumes:
+      - e2e-data:/data
 
   # The same image posing as an older release.
   worker-old:
@@ -56,6 +63,8 @@ services:
       - secrets:/run/omnarr/secrets:ro
 
   nzbget:
+    volumes:
+      - e2e-data:/data
     depends_on:
       nntp: { condition: service_started }
       nntp-backup: { condition: service_started }
@@ -65,8 +74,14 @@ services:
   qbittorrent:
     networks: !override [swarm]
     ports: !reset []
+    volumes:
+      - e2e-data:/data
     depends_on:
       webseed: { condition: service_started }
+
+  jellyfin:
+    volumes:
+      - e2e-data:/data:ro
 
   tmdb:
     profiles: [test]

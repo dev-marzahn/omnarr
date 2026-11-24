@@ -27,7 +27,7 @@ Every setting is optional. Copy `.env.example` to `.env` and uncomment what you 
 | `OMNARR_BIND_ADDRESS` | `0.0.0.0` | Where the web, Convex and Jellyfin ports listen; `127.0.0.1` behind a proxy on the same host. |
 | `OMNARR_PEER_PORT` | 6881 | qBittorrent's peer port (direct layout). |
 | `OMNARR_SETUP_PASSWORD` | unset: generated | The setup password first run asks for. |
-| `OMNARR_DATA_DIR` | `./data` | The media folder. |
+| `OMNARR_DATA_DIR` | `./data` | The media folder: a host path, absolute or relative to the install folder, never a Docker volume name. |
 | `PUID`, `PGID` | 1000, 1000 | The owner of the media folder, and the user the worker, the clients and Jellyfin run as. |
 | `OMNARR_UPDATE_CHECK` | `on` | The daily release check. |
 | `TMDB_API_TOKEN` | unset: built-in | Your own TMDB Read Access Token. |
@@ -68,7 +68,7 @@ Without a web URL, omnarr accepts sign-in from any address on the web port, whic
 
 1. Add a resource from the public repository `https://github.com/dev-marzahn/omnarr`, branch **`release`**, build pack Docker Compose. `release` always holds the newest release's files; `main` may need images that aren't released yet.
 2. Set Docker Compose Location to `/compose.yml` for the direct layout, or `/compose.vpn.merged.yml` for the VPN layout (`compose.yml` with `compose.vpn.yml` merged in).
-3. Set the variables from [Configuration](#configuration) in the resource's Environment Variables instead of `.env`, then deploy.
+3. Set the variables from [Configuration](#configuration) in the resource's Environment Variables instead of `.env`. Set `OMNARR_DATA_DIR` to the media folder's absolute path on the Coolify server, such as `/srv/media`: unset, the media lands in Coolify's own folder for the resource. Then deploy, and check in "Show Deployable Compose" that every `/data` mount's `source` is your folder.
 4. To switch to the VPN layout later, choose the VPN in Settings › Downloads, change Docker Compose Location to `/compose.vpn.merged.yml` and redeploy. omnarr's "Add COMPOSE_FILE…" notice means this step.
 5. After each release, redeploy. Coolify redeploys on its own only through a webhook on a repository you administer.
 
