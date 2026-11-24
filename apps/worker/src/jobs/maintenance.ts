@@ -18,6 +18,7 @@ import { inodeOf } from '../fs/space.ts';
 import type { JellyfinClient } from '../jellyfin/client.ts';
 import type { ClientRuntimeStore } from '../runtime/clientRuntime.ts';
 import { type JobHandler, JobFailure } from '../runtime/lease.ts';
+import { type CheckFilesDeps, checkLibraryFiles } from '../scan/checkFiles.ts';
 import { type ScanDeps, scanLibrary } from '../scan/walk.ts';
 import { type SyncDeps, syncDefinitions } from '../sites/sync.ts';
 import { type BundleDeps, buildSupportBundle } from '../supportBundle.ts';
@@ -38,7 +39,7 @@ export type MaintenanceDeps = {
   log?: (message: string) => void;
   /** The support bundle's worker part. */
   bundle?: Omit<BundleDeps, 'backend'>;
-  backend: ScanDeps['backend'] & BundleDeps['backend'];
+  backend: ScanDeps['backend'] & CheckFilesDeps['backend'] & BundleDeps['backend'];
   /** The definitions sync: the backend's writes, OMNARR_DEFINITIONS_URL, the /definitions folder and the outside GET. */
   definitions?: Omit<SyncDeps, 'lease' | 'log' | 'signal'>;
 } & Pick<ScanDeps, 'probe'>;
@@ -234,6 +235,8 @@ export function maintenanceHandler(deps: MaintenanceDeps): JobHandler {
       }
       case 'scanLibrary':
         return { class: 'maintenance', action: 'scanLibrary', ...(await scanLibrary(job, payload, deps, { signal, progress })) };
+      case 'checkLibraryFiles':
+        return { class: 'maintenance', action: 'checkLibraryFiles', ...(await checkLibraryFiles(job, payload, deps, { signal })) };
       case 'pushJellyfinPassword':
         await requireJellyfin(deps).pushPassword(payload.username, payload.newPassword, signal);
         return { class: 'maintenance', action: 'pushJellyfinPassword', pushed: true };

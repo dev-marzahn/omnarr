@@ -164,6 +164,15 @@ export const ScanRecordProbesRequest = Lease.extend({
 });
 export type ScanRecordProbesRequest = z.infer<typeof ScanRecordProbesRequest>;
 
+export const CheckedFile = z.object({ fileId: zid('files'), path: z.string() });
+export type CheckedFile = z.infer<typeof CheckedFile>;
+export const FileCheckPageRequest = Lease.extend({ root: z.string(), cursor: z.string().nullable() });
+export type FileCheckPageRequest = z.infer<typeof FileCheckPageRequest>;
+export const FileCheckPageResponse = z.object({ files: z.array(CheckedFile), cursor: z.string(), done: z.boolean() });
+export type FileCheckPageResponse = z.infer<typeof FileCheckPageResponse>;
+export const FileCheckReportRequest = Lease.extend({ verdicts: z.array(CheckedFile.extend({ verdict: z.enum(['present', 'missing']) })) });
+export type FileCheckReportRequest = z.infer<typeof FileCheckReportRequest>;
+
 /** `jellyfin.playback.report(sessionId, plays)`: the poller's current set of plays, sent when it changes. */
 export const PlaybackReportRequest = z.object({ sessionId: zid('workerSessions'), plays: z.array(ActivePlay) });
 export type PlaybackReportRequest = z.infer<typeof PlaybackReportRequest>;

@@ -42,6 +42,8 @@ export const FailureCode = z.enum([
   'unknownClientFailure',
   // A /data area isn't writable, or staging, originals and the libraries aren't on one device.
   'storageUnavailable',
+  'libraryUnavailable',
+  'fileMissing',
   // A chosen VPN isn't active yet, or the tunnel is down; torrent submits wait.
   'vpnDown',
   // metadata: TMDB rejected the token in use; a source failing for too long
@@ -174,6 +176,8 @@ const TABLE: Record<FailureCode, Row> = {
   unknownClientFailure: { class: 'system', scope: 'unit', fixActions: ['retryRelease', 'tryNextBest', 'dismiss'] },
   // Raised and resolved by the worker's storage check; nothing to click.
   storageUnavailable: { class: 'system', scope: 'system', fixActions: [] },
+  libraryUnavailable: { class: 'system', scope: 'system', fixActions: [] },
+  fileMissing: { class: 'system', scope: 'unit', fixActions: ['tryNextBest', 'searchAndPick', 'dismiss'] },
   // Raised and resolved by downloadClients.report; its detail gives the step to take.
   vpnDown: { class: 'system', scope: 'system', fixActions: [] },
   // Both resolve themselves on the next success, so neither can be dismissed.
@@ -257,6 +261,10 @@ export const DEFAULT_LIMITS = {
   scanBatchSize: 100,
   scanFoldersPerAction: 20,
   scanProbeConcurrency: 2,
+  fileCheckPageSize: 200,
+  fileMissingConfirmMs: HOUR,
+  fileStatTimeoutMs: 10 * SECOND,
+  fileMassMissingMin: 3,
   // Five wrong setup passwords lock admin creation this long.
   setupPasswordAttempts: 5,
   setupLockMs: 15 * MINUTE,
@@ -303,6 +311,7 @@ export const TEST_LIMIT_KEYS = [
   'setupLockMs',
   'nyaaIntervalMs',
   'definitionMinIntervalMs',
+  'fileMissingConfirmMs',
 ] as const satisfies readonly (keyof typeof DEFAULT_LIMITS)[];
 export type TestLimitKey = (typeof TEST_LIMIT_KEYS)[number];
 

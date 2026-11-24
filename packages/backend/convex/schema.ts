@@ -186,6 +186,8 @@ export default defineSchema({
     sidecars: v.optional(v.array(zodToConvex(Sidecar))),
     // A scanned file, or a prepared copy of one: never renamed.
     keepsName: v.optional(v.boolean()),
+    missingSeenAt: v.optional(v.number()),
+    missingSince: v.optional(v.number()),
   })
     .index('by_path', ['path'])
     .index('by_inode', ['inode']),

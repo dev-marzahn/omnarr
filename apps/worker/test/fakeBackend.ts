@@ -20,6 +20,10 @@ import {
   type ScanEntry,
   type ScanRecordProbesRequest,
   type ScanReportBatchRequest,
+  type CheckedFile,
+  type FileCheckPageRequest,
+  type FileCheckPageResponse,
+  type FileCheckReportRequest,
   type SupportBundleData,
 } from '@omnarr/contracts';
 import { ConvexError } from 'convex/values';
@@ -259,6 +263,25 @@ export class FakeBackend implements WorkerBackend {
     this.record('scanRecordProbes', args);
     this.fenced(args.jobId, args.leaseEpoch);
     this.scanProbes.push(args.probes);
+  }
+
+  public trackedFilesByRoot: Record<string, CheckedFile[]> = {};
+  public fileVerdicts: FileCheckReportRequest['verdicts'] = [];
+
+  public async fileCheckPage(args: FileCheckPageRequest): Promise<FileCheckPageResponse> {
+    this.record('fileCheckPage', args);
+    this.fenced(args.jobId, args.leaseEpoch);
+    const files = this.trackedFilesByRoot[args.root] ?? [];
+    const at = args.cursor === null ? 0 : Number(args.cursor);
+    const onePerPageToExerciseTheCursor = 1;
+    const next = at + onePerPageToExerciseTheCursor;
+    return { files: files.slice(at, next), cursor: String(next), done: next >= files.length };
+  }
+
+  public async fileCheckReport(args: FileCheckReportRequest): Promise<void> {
+    this.record('fileCheckReport', args);
+    this.fenced(args.jobId, args.leaseEpoch);
+    this.fileVerdicts.push(...args.verdicts);
   }
 
   /** What `worker.bundleData` answers. */

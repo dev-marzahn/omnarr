@@ -14,6 +14,7 @@ import { appendEvent } from '../lib/events';
 import { workerError } from '../lib/functions';
 import { raiseIssue, resolveIssuesForUnit, resolveSystemIssue } from '../lib/issues';
 import { transition, unitsOfGrab } from '../lib/stateMachine';
+import { checked, enqueueFileCheck, resolveFileMissingOnceAFileOfItPlays } from '../library/missingFiles';
 import { moved, renamed } from '../library/naming';
 import { metadataPool } from '../metadata/pool';
 import { prepared, prepareEnded, retireOldVersions } from '../pipeline/preparation';
@@ -410,6 +411,7 @@ export async function published(ctx: MutationCtx, job: Doc<'jobs'>, result: Resu
     await transition(ctx, 'publication', publicationId, 'visible', { kind: 'stageFinished', message: 'Visible in Jellyfin.' });
     // A Grab's file, once Jellyfin lists it, replaces the Unit's earlier files that never played.
     if (job.grabId && version?.kind === 'primary') await retireNeverPlayed(ctx, publication.unitId, version.fileId);
+    if (version?.kind === 'primary' || version?.kind === 'staged') await resolveFileMissingOnceAFileOfItPlays(ctx, publication.unitId, version.fileId);
     await resolveIssuesForUnit(ctx, publication.unitId, job.grabId ? ['jellyfinMisread'] : ['jellyfinUnavailable', 'jellyfinMisread']);
   }
   await recomputeUnits(ctx, units);
@@ -451,6 +453,9 @@ export async function maintenance(ctx: MutationCtx, job: Doc<'jobs'>, result: Re
     case 'scanLibrary':
       if (result.action === 'scanLibrary') await scanRead(ctx, job.payload.scanRunId, result);
       return;
+    case 'checkLibraryFiles':
+      if (result.action === 'checkLibraryFiles') await checked(ctx, job.payload, result);
+      return;
   }
 }
 
@@ -460,6 +465,7 @@ async function scanRead(ctx: MutationCtx, scanRunId: Id<'scanRuns'>, result: Ext
   if (run?.state !== 'reading') return;
   await ctx.db.patch(scanRunId, { state: 'matching', counts: { ...run.counts, read: result.found, tracked: result.found - result.untracked } });
   await metadataPool.enqueueAction(ctx, internal.scan.match.run, { scanRunId });
+  await enqueueFileCheck(ctx);
 }
 
 /** Dispatches a completed job's result to its class's handler; the job's event is sent after it. */

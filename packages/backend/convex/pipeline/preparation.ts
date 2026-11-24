@@ -21,7 +21,7 @@ import { internal } from '../_generated/api';
 import type { Doc, Id } from '../_generated/dataModel';
 import { internalMutation, type MutationCtx, type QueryCtx } from '../_generated/server';
 import { cancelJob, enqueueJob, enqueueWith } from '../jobs/queue';
-import { recomputeUnits } from '../lib/derivedState';
+import { isMissing, recomputeUnits } from '../lib/derivedState';
 import { appendEvent } from '../lib/events';
 import { raiseIssue, resolveIssuesForUnit } from '../lib/issues';
 import { transition } from '../lib/stateMachine';
@@ -138,7 +138,11 @@ export const priorityOf = (reason: RenditionReason, steps: readonly string[]): n
 /** The first primary of the Units that is another file than `fileId`: what a kept original's output replaces. */
 async function primaryBesides(ctx: QueryCtx, units: Doc<'units'>[], fileId: Id<'files'>): Promise<Doc<'files'> | null> {
   for (const unit of units)
-    for (const version of await versionsOf(ctx, unit._id)) if (version.kind === 'primary' && version.fileId !== fileId) return await ctx.db.get(version.fileId);
+    for (const version of await versionsOf(ctx, unit._id)) {
+      if (version.kind !== 'primary' || version.fileId === fileId) continue;
+      const file = await ctx.db.get(version.fileId);
+      if (file && file.missingSince === undefined) return file;
+    }
   return null;
 }
 
@@ -168,6 +172,8 @@ export async function start(ctx: MutationCtx, sourceFileId: Id<'files'>, reason:
   // A held upgrade file replaces the primary that plays, as a kept original's output does.
   const held = isHeld(file.path);
   const replaced = kept || held ? await primaryBesides(ctx, units, sourceFileId) : null;
+  const outputWouldBeTheHeldFolder = held && !replaced;
+  if (outputWouldBeTheHeldFolder) return null;
 
   for (const { rendition } of await pendingRenditions(ctx, sourceFileId))
     if (rendition.playbackProfileId === profile._id) await cancelRendition(ctx, rendition);
@@ -431,6 +437,8 @@ export async function retireOldVersions(ctx: MutationCtx, unitId: Id<'units'>, f
     if (version.fileId === fileId || (version.kind !== 'primary' && version.kind !== 'original')) continue;
     const old = await ctx.db.get(version.fileId);
     if (!old || (version.kind === 'original' && old.candidateId === current?.candidateId)) continue;
+    const goneFromDiskSoItsShareMayOnlyBeDown = old.missingSince !== undefined;
+    if (goneFromDiskSoItsShareMayOnlyBeDown) continue;
     for (const publication of await ctx.db
       .query('publications')
       .withIndex('by_unit', (q) => q.eq('unitId', unitId))
@@ -537,7 +545,8 @@ export async function prepared(ctx: MutationCtx, job: Doc<'jobs'>, result: Extra
   const replaced = new Set<Id<'files'>>();
   for (const unit of units)
     for (const version of await versionsOf(ctx, unit._id))
-      if (version.kind === 'primary' && version.fileId !== source._id && version.fileId !== outputFileId) replaced.add(version.fileId);
+      if (version.kind === 'primary' && version.fileId !== source._id && version.fileId !== outputFileId && !(await isMissing(ctx, version.fileId)))
+        replaced.add(version.fileId);
   for (const fileId of replaced) {
     // A primary that moved after the job was queued (a rename, say) isn't the file the worker replaced: delete it here.
     const file = await ctx.db.get(fileId);

@@ -175,6 +175,10 @@ describe('the Files tab', () => {
     ]);
   });
 
+  test('a primary the tracked-file check found gone says so', () => {
+    expect(fileRows([file({ missingSince: 1 })])[0]!.kind).toBe('Missing from disk');
+  });
+
   test('a prepared file waiting for Jellyfin, with its sidecars, and the kept original, in that order', () => {
     const rows = fileRows([
       file({ fileId: 'f2' as FileRow['fileId'], path: '/data/originals/series/Old Show (2015)/Season 01/a.mkv', kind: 'original', origin: 'download' }),

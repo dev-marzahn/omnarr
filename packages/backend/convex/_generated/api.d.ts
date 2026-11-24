@@ -64,6 +64,7 @@ import type * as lib_stateMachine from "../lib/stateMachine.js";
 import type * as lib_userAgent from "../lib/userAgent.js";
 import type * as library_deleteWork from "../library/deleteWork.js";
 import type * as library_misread from "../library/misread.js";
+import type * as library_missingFiles from "../library/missingFiles.js";
 import type * as library_naming from "../library/naming.js";
 import type * as library_read from "../library/read.js";
 import type * as library_works from "../library/works.js";
@@ -192,6 +193,7 @@ declare const fullApi: ApiFromModules<{
   "lib/userAgent": typeof lib_userAgent;
   "library/deleteWork": typeof library_deleteWork;
   "library/misread": typeof library_misread;
+  "library/missingFiles": typeof library_missingFiles;
   "library/naming": typeof library_naming;
   "library/read": typeof library_read;
   "library/works": typeof library_works;
