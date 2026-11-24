@@ -14,7 +14,8 @@
 // layout, except a VPN override (`compose.vpn.yml`, also `.yaml` and the
 // `docker-compose.` prefix). That is merged over the base file beside it
 // (`compose.yml`), as `docker compose -f compose.yml -f compose.vpn.yml` merges
-// them, and checked in the VPN layout. Other files, such as
+// them, and checked in the VPN layout; `compose.vpn.merged.yml`, the two in one
+// file, is checked alone in the VPN layout. Other files, such as
 // `e2e/compose.vpn.test.yml`, are checked alone.
 //
 //   node scripts/check-ports.ts
@@ -185,15 +186,18 @@ export function composeFiles(dir: string): string[] {
 }
 
 const OVERRIDE = /^((?:docker-)?compose)\.vpn\.ya?ml$/;
+const MERGED = /^(?:docker-)?compose\.vpn\.merged\.ya?ml$/;
 
 /**
  * The layouts to check: every compose file alone in the direct layout, except a VPN override
  * (`compose.vpn.y(a)ml`, `docker-compose.vpn.y(a)ml`), which is merged over its sibling base
  * (`compose.y(a)ml`, `docker-compose.y(a)ml` in the same folder) in the VPN layout, or checked
- * alone in the VPN layout when it has none.
+ * alone in the VPN layout when it has none. The VPN layout in one file (`compose.vpn.merged.y(a)ml`)
+ * is checked alone in the VPN layout.
  */
 export function composeLayouts(files: string[]): { files: string[]; layout: Layout }[] {
   return files.map((file) => {
+    if (MERGED.test(basename(file))) return { files: [file], layout: 'vpn' };
     const override = OVERRIDE.exec(basename(file));
     if (!override) return { files: [file], layout: 'direct' };
     const base = files.find((f) => dirname(f) === dirname(file) && new RegExp(`^${override[1]}\\.ya?ml$`).test(basename(f)));

@@ -64,7 +64,17 @@ Without a web URL, omnarr accepts sign-in from any address on the web port, whic
 
 ### Coolify and other compose front ends
 
-- Coolify deploys with `docker compose`, so the start order holds. Mark `setup` with `exclude_from_hc: true`, so the exited container doesn't count against the stack's health.
+**Coolify from git.** Coolify deploys one compose file from a repository branch and ignores `COMPOSE_FILE`, so the VPN layout comes as one file too:
+
+1. Add a resource from the public repository `https://github.com/dev-marzahn/omnarr`, branch **`release`**, build pack Docker Compose. `release` always holds the newest release's files; `main` may need images that aren't released yet.
+2. Set Docker Compose Location to `/compose.yml` for the direct layout, or `/compose.vpn.merged.yml` for the VPN layout (`compose.yml` with `compose.vpn.yml` merged in).
+3. Set the variables from [Configuration](#configuration) in the resource's Environment Variables instead of `.env`, then deploy.
+4. To switch to the VPN layout later, choose the VPN in Settings › Downloads, change Docker Compose Location to `/compose.vpn.merged.yml` and redeploy. omnarr's "Add COMPOSE_FILE…" notice means this step.
+5. After each release, redeploy. Coolify redeploys on its own only through a webhook on a repository you administer.
+
+Then:
+
+- Coolify deploys with `docker compose`, so the start order holds. `setup` has `restart: "no"`, and Coolify 4.0.0-beta.445 and later leave such a service out of the resource's status, so the exited container doesn't make the stack look degraded. On an older Coolify, update it: a compose file from git can't take Coolify's `exclude_from_hc`, which plain Docker Compose refuses.
 - Coolify's log view shows `setup`'s output, including the generated setup password.
 - If a front end doesn't wait for `setup` to finish, start it first: `docker compose up -d setup`, then `docker compose up -d`.
 - Coolify prefixes volume names with the resource's UUID, so they aren't `omnarr_<name>`. Find them with `docker volume ls` or Coolify's "Show Deployable Compose", and use them in the commands below. Run the commands on the Coolify server. `./backups` is relative to the folder Coolify deploys from.
@@ -74,6 +84,8 @@ Without a web URL, omnarr accepts sign-in from any address on the web port, whic
 1. Read the release notes. If their first line asks for it, back up Jellyfin's config volume first ([Backups](#backups)).
 2. Replace `compose.yml` and `compose.vpn.yml` with the new release's. Keep `.env`.
 3. Run `docker compose pull && docker compose up -d`.
+
+On Coolify from the `release` branch, redeploy instead of steps 2 and 3.
 
 The web app is unreachable until the backend has applied the release; there is no maintenance page. Any v1.x release upgrades to the latest. The files' pins are the tested set: you may pin other versions, at your own risk. A downgrade is a restore of the backup taken before the upgrade.
 

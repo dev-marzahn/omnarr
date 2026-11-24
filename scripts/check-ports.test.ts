@@ -216,6 +216,14 @@ describe('composeLayouts', () => {
     ]);
   });
 
+  test('checks the merged VPN file alone in the VPN layout', () => {
+    expect(composeLayouts(['/r/compose.yml', '/r/compose.vpn.yml', '/r/compose.vpn.merged.yml'])).toEqual([
+      { files: ['/r/compose.yml'], layout: 'direct' },
+      { files: ['/r/compose.yml', '/r/compose.vpn.yml'], layout: 'vpn' },
+      { files: ['/r/compose.vpn.merged.yml'], layout: 'vpn' },
+    ]);
+  });
+
   test('checks a VPN override without a base alone in the VPN layout', () => {
     expect(composeLayouts(['/r/compose.yml', '/r/deploy/compose.vpn.yaml'])).toEqual([
       { files: ['/r/compose.yml'], layout: 'direct' },
