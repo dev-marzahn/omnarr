@@ -2,7 +2,19 @@
 import type { WorkSummary } from '@omnarr/contracts';
 import { describe, expect, test } from 'vite-plus/test';
 
-import { libraryQuery, libraryState, workLine } from '../lib/library';
+import { alreadySearchingToast, libraryQuery, libraryState, workLine } from '../lib/library';
+
+describe('alreadySearchingToast', () => {
+  test('nothing when no episode was skipped', () => {
+    expect(alreadySearchingToast(0, 'series')).toBeUndefined();
+  });
+
+  test('counts the episodes it skipped, and names a movie as the movie', () => {
+    expect(alreadySearchingToast(1, 'series')?.title).toBe('1 episode is already being searched');
+    expect(alreadySearchingToast(12, 'series')?.title).toBe('12 episodes are already being searched');
+    expect(alreadySearchingToast(1, 'movie')?.title).toBe('The movie is already being searched');
+  });
+});
 
 describe('libraryState and libraryQuery', () => {
   test('defaults: grid, all, no search', () => {

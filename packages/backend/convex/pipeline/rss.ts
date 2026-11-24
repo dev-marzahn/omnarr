@@ -19,7 +19,17 @@ import { workMetadataOf } from '../metadata/write';
 import { targetOf } from '../playback/target';
 import { keysForWork } from './blocklist';
 import { pickInMutation } from './pick';
-import { CandidateInsert, disabledProtocols, insertCandidates, isWanted, preferredLanguageOf, profileContent, WorkForSearch, workForSearch } from './search';
+import {
+  CandidateInsert,
+  disabledProtocols,
+  insertCandidates,
+  isWanted,
+  preferredLanguageOf,
+  profileContent,
+  unitsBeingSearchedToPick,
+  WorkForSearch,
+  workForSearch,
+} from './search';
 import { CurrentRelease, currentsFor, isUpgradeable } from './upgrades';
 
 /**
@@ -205,6 +215,7 @@ export const record = internalMutation({
     for (const { workId, unitIds, rows } of perWork) {
       const work = await ctx.db.get(workId);
       if (!work || rows.length === 0) continue;
+      const searching = await unitsBeingSearchedToPick(ctx, workId);
       const attemptId = await ctx.db.insert('searchAttempts', {
         unitIds,
         wantedUnitIds: unitIds,
@@ -215,7 +226,7 @@ export const record = internalMutation({
         indexerResults: [{ indexerId, status: 'ok', count: rows.length, pages: 1 }],
       });
       for (const unitId of unitIds) {
-        await ctx.db.patch(unitId, { lastSearchAttemptId: attemptId });
+        if (!searching.has(unitId)) await ctx.db.patch(unitId, { lastSearchAttemptId: attemptId });
         await appendEvent(ctx, {
           unitId,
           stage: 'search',

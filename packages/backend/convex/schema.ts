@@ -231,6 +231,8 @@ export default defineSchema({
     workId: v.id('works'),
     groupKind: zodToConvex(SearchGroupKind),
     wantedUnitIds: v.array(v.id('units')),
+    searchRunId: v.optional(v.id('_scheduled_functions')),
+    answerBy: v.optional(v.number()),
     indexerResults: v.array(
       v.object({
         indexerId: v.id('indexers'),
@@ -242,7 +244,7 @@ export default defineSchema({
         skipped: v.optional(zodToConvex(StoredIndexerSkip)),
       }),
     ),
-  }).index('by_state', ['state']),
+  }).index('by_state_work', ['state', 'workId']),
 
   candidates: defineTable({
     searchAttemptId: v.id('searchAttempts'),

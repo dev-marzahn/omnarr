@@ -9,8 +9,7 @@ import { internalMutation, type MutationCtx } from '../_generated/server';
 import { shareLeft } from '../indexers/rateLimit';
 import { BUDGET, DEEP_PAGING_CAP, DEEP_PAGING_MARGIN_MS } from '../indexers/requestPlan';
 import { recomputeUnits } from '../lib/derivedState';
-import { groupUnits } from './groups';
-import { isWanted, startSearch } from './search';
+import { isWanted, planSearch, startSearch } from './search';
 
 /** The most Units one run reads through `units.by_last_search`. */
 export const BACKFILL_READ_CAP = 200;
@@ -73,18 +72,14 @@ export const runBackfill = internalMutation({
     const groupOf = new Map<Id<'units'>, Planned>();
     for (const [workId, units] of byWork) {
       const work = (await ctx.db.get(workId))!;
-      const all = await ctx.db
-        .query('units')
-        .withIndex('by_work', (q) => q.eq('workId', workId))
-        .collect();
-      const airDates = new Map(all.map((unit) => [unit._id, unit.airDateUtc]));
-      const asGroupUnit = (unit: Doc<'units'>) => ({ _id: unit._id, tmdbSeason: unit.tmdbSeason, tmdbEpisode: unit.tmdbEpisode, wanted: isWanted(unit, now) });
-      for (const group of groupUnits(units.map(asGroupUnit), { kind: work.kind, numberingScheme: work.numberingScheme, units: all.map(asGroupUnit) })) {
+      const airDateOf = new Map(units.map((unit) => [unit._id, unit.airDateUtc]));
+      const { groups } = await planSearch(ctx, work, units, 'backfill', { now });
+      for (const group of groups) {
         const planned = {
           unitIds: group.unitIds,
           requests: estimate(
             group.kind,
-            group.unitIds.map((unitId) => airDates.get(unitId)),
+            group.unitIds.map((unitId) => airDateOf.get(unitId)),
             now,
           ),
         };

@@ -30,7 +30,7 @@ export function importAsFor(row: Doc<'candidates'>, attempt: Doc<'searchAttempts
 
 /** "Search and pick" for one Unit: a user search whose results wait for the user's grab. */
 export async function searchInteractive(ctx: MutationCtx, unitId: Id<'units'>): Promise<Id<'searchAttempts'>> {
-  const [attemptId] = await startSearch(ctx, [unitId], 'interactive');
+  const attemptId = (await startSearch(ctx, [unitId], 'interactive')).attemptIds[0];
   if (!attemptId) throw new ConvexError('This episode can no longer be searched.');
   return attemptId;
 }

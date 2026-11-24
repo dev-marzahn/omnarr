@@ -30,11 +30,16 @@ export type PacedSite = 'nyaa';
 type Reservation = { waitMs: number } | { skip: true };
 type PacingRow = { _id: Id<'indexerPacing'>; nextAt: number };
 
-/** Takes the next slot after `row`: `waitMs` until it, or `skip` when it is more than 5 minutes away (nothing written). */
-async function takeSlot(ctx: MutationCtx, row: PacingRow | null, intervalMs: number, insert: (nextAt: number) => Promise<unknown>): Promise<Reservation> {
+async function takeSlot(
+  ctx: MutationCtx,
+  row: PacingRow | null,
+  intervalMs: number,
+  longestWaitMs: number,
+  insert: (nextAt: number) => Promise<unknown>,
+): Promise<Reservation> {
   const now = Date.now();
   const slot = Math.max(now, row?.nextAt ?? now);
-  if (slot - now > MAX_PACING_WAIT_MS) return { skip: true as const };
+  if (slot - now > longestWaitMs) return { skip: true as const };
   if (row) await ctx.db.patch(row._id, { nextAt: slot + intervalMs });
   else await insert(slot + intervalMs);
   return { waitMs: slot - now };
@@ -52,17 +57,16 @@ const siteRow = (ctx: MutationCtx, site: PacedSite) =>
     .withIndex('by_site', (q) => q.eq('site', site))
     .unique();
 
-/** Takes the indexer's next slot: `waitMs` until it, or `skip` when it is more than 5 minutes away (nothing written). */
-export async function reserveSlot(ctx: MutationCtx, indexerId: Id<'indexers'>, intervalMs: number): Promise<Reservation> {
-  return await takeSlot(ctx, await indexerRow(ctx, indexerId), intervalMs, (nextAt) => ctx.db.insert('indexerPacing', { indexerId, nextAt }));
+export async function reserveSlot(ctx: MutationCtx, indexerId: Id<'indexers'>, intervalMs: number, longestWaitMs: number): Promise<Reservation> {
+  return await takeSlot(ctx, await indexerRow(ctx, indexerId), intervalMs, longestWaitMs, (nextAt) => ctx.db.insert('indexerPacing', { indexerId, nextAt }));
 }
 
 const reservation = v.union(v.object({ waitMs: v.number() }), v.object({ skip: v.literal(true) }));
 
 export const reserve = internalMutation({
-  args: { indexerId: v.id('indexers'), intervalMs: v.number() },
+  args: { indexerId: v.id('indexers'), intervalMs: v.number(), longestWaitMs: v.number() },
   returns: reservation,
-  handler: (ctx, { indexerId, intervalMs }) => reserveSlot(ctx, indexerId, intervalMs),
+  handler: (ctx, { indexerId, intervalMs, longestWaitMs }) => reserveSlot(ctx, indexerId, intervalMs, longestWaitMs),
 });
 
 /**
@@ -74,7 +78,7 @@ export const reserveSite = internalMutation({
   args: { site: v.literal('nyaa'), intervalMs: v.number() },
   returns: reservation,
   handler: async (ctx, { site, intervalMs }) =>
-    await takeSlot(ctx, await siteRow(ctx, site), intervalMs, (nextAt) => ctx.db.insert('indexerPacing', { site, nextAt })),
+    await takeSlot(ctx, await siteRow(ctx, site), intervalMs, MAX_PACING_WAIT_MS, (nextAt) => ctx.db.insert('indexerPacing', { site, nextAt })),
 });
 
 /**
@@ -90,7 +94,7 @@ export const adoptSite = internalMutation({
     if (row && !(await indexerRow(ctx, indexerId))) await ctx.db.patch(row._id, { indexerId, site: undefined });
     else {
       if (row) await ctx.db.delete(row._id);
-      await reserveSlot(ctx, indexerId, intervalMs);
+      await reserveSlot(ctx, indexerId, intervalMs, MAX_PACING_WAIT_MS);
     }
     return null;
   },
@@ -103,8 +107,8 @@ async function waitFor(slot: Reservation): Promise<'go' | 'skip'> {
 }
 
 /** For actions: takes a slot and waits for it. `skip` when the slot was refused. */
-export async function paced(ctx: Pick<ActionCtx, 'runMutation'>, indexerId: Id<'indexers'>, intervalMs: number): Promise<'go' | 'skip'> {
-  return await waitFor(await ctx.runMutation(internal.indexers.pacing.reserve, { indexerId, intervalMs }));
+export async function paced(ctx: Pick<ActionCtx, 'runMutation'>, indexerId: Id<'indexers'>, intervalMs: number, longestWaitMs: number): Promise<'go' | 'skip'> {
+  return await waitFor(await ctx.runMutation(internal.indexers.pacing.reserve, { indexerId, intervalMs, longestWaitMs }));
 }
 
 /** `paced` for a site not yet saved. */

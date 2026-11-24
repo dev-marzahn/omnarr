@@ -17,7 +17,7 @@ import type { SetMonitoredRequest, UnitRow } from '@omnarr/contracts';
 import { workCrumbs } from '~/lib/breadcrumbs';
 import { activeDownloadsLine } from '~/lib/downloads';
 import { jellyfinItemUrl, openInJellyfinItems } from '~/lib/jellyfin';
-import { seasonKey, workLine, workMenu } from '~/lib/library';
+import { alreadySearchingToast, seasonKey, workLine, workMenu } from '~/lib/library';
 import { prepareAllDialog, prepareAllLabel, prepareAllToast } from '~/lib/preparation';
 import { groupBySeason, type SeasonGroup } from '~/lib/seasons';
 import { type RowActionKind, upgradingTag } from '~/lib/unitStates';
@@ -143,6 +143,11 @@ async function onPrepareAll() {
 
 // The header bar.
 const wanted = computed(() => (data.value?.units ?? []).filter((u) => u.monitored && (u.state === 'wanted' || u.state === 'failed')));
+async function searchWanted() {
+  const { skippedAlreadySearching } = await searchNow({ unitIds: wanted.value.map((u) => u.unitId) });
+  const skipped = alreadySearchingToast(skippedAlreadySearching, isMovie.value ? 'movie' : 'series');
+  if (skipped) toast.add({ ...skipped, color: 'neutral', icon: 'i-lucide-search' });
+}
 const actions = computed(() => {
   const list = [];
   if (wanted.value.length > 0)
@@ -150,7 +155,7 @@ const actions = computed(() => {
       label: isMovie.value ? 'Search now' : `Search wanted (${wanted.value.length})`,
       icon: 'i-lucide-search',
       loading: pending.value.has('searchWanted'),
-      onClick: () => run('searchWanted', () => searchNow({ unitIds: wanted.value.map((u) => u.unitId) }), "The search couldn't start"),
+      onClick: () => run('searchWanted', searchWanted, "The search couldn't start"),
     });
   if (notInTarget.value > 0)
     list.push({ label: prepareAllLabel(notInTarget.value), icon: 'i-lucide-wand-sparkles', onClick: () => (confirmPrepareAll.value = true) });
