@@ -29,6 +29,7 @@ const open = ref(false);
 
 <template>
   <UDashboardSidebar
+    id="app"
     v-model:open="open"
     collapsible
     :default-size="15"
@@ -45,12 +46,10 @@ const open = ref(false);
         </span>
         <span v-if="!collapsed" class="font-semibold text-highlighted">omnarr</span>
       </NuxtLink>
-      <UDashboardSidebarCollapse v-if="!collapsed" class="ms-auto hidden lg:inline-flex" />
     </template>
 
     <template #default="{ collapsed }">
       <UNavigationMenu :items="items" orientation="vertical" :collapsed="collapsed" tooltip popover highlight :ui="{ list: 'gap-0.5' }" />
-      <UDashboardSidebarCollapse v-if="collapsed" class="mx-auto mt-auto hidden lg:inline-flex" />
     </template>
 
     <template #footer="{ collapsed }">
