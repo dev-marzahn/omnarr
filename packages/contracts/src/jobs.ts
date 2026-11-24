@@ -6,7 +6,7 @@ import { z } from 'zod';
 import { LibraryKind } from './dto/library.ts';
 import { FailureCode } from './failures.ts';
 import { IndexerFailure, IndexerPage, IndexerRequest, IndexerTestResult } from './indexer.ts';
-import { JellyfinLibraryItem, JellyfinLocale, SetupMode, SetupStepState } from './jellyfin.ts';
+import { OmnarrBrandingClaim, JellyfinLibraryItem, JellyfinLocale, SetupMode, SetupStepState } from './jellyfin.ts';
 import { ClientKind } from './kinds.ts';
 import { NamedUnit, NamingContext, Sidecar } from './naming.ts';
 import { PlanStep, ProbeSummary, TargetFormat } from './playback.ts';
@@ -251,6 +251,8 @@ export const MaintenancePayload = z.discriminatedUnion('action', [
     remoteAccess: z.boolean(),
     /** Libraries without metadata or image fetchers: tests only. */
     offline: z.literal(true).optional(),
+    webUrl: z.string().optional(),
+    brandingClaim: OmnarrBrandingClaim.optional(),
   }),
 ]);
 export type MaintenancePayload = z.infer<typeof MaintenancePayload>;
@@ -346,6 +348,7 @@ export const MaintenanceResult = z.discriminatedUnion('action', [
     /** Only when the run made a new key. */
     apiKey: z.string().optional(),
     libraries: z.array(JellyfinLibraryItem),
+    brandingClaim: OmnarrBrandingClaim,
     steps: z.array(SetupStepState),
   }),
 ]);

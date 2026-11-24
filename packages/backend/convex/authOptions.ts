@@ -15,7 +15,9 @@ import { originsFor } from './setup/origins';
  * username sign-in doesn't use: `SITE_URL` (OMNARR_WEB_URL, set by the
  * backend's pre-push hook), or localhost on the web port.
  */
-export const siteUrl = (): string => process.env.SITE_URL || `http://localhost:${process.env.WEB_PORT || '3000'}`;
+export const siteUrl = (): string => configuredSiteUrl() ?? `http://localhost:${process.env.WEB_PORT || '3000'}`;
+
+export const configuredSiteUrl = (): string | undefined => process.env.SITE_URL || undefined;
 
 export const baseAuthOptions = () =>
   ({
@@ -23,7 +25,7 @@ export const baseAuthOptions = () =>
     baseURL: process.env.CONVEX_SITE_URL,
     secret: process.env.BETTER_AUTH_SECRET,
     // Per request, for the origin check and CORS alike.
-    trustedOrigins: (request?: Request) => originsFor(request, { siteUrl: process.env.SITE_URL, webPort: process.env.WEB_PORT }),
+    trustedOrigins: (request?: Request) => originsFor(request, { siteUrl: configuredSiteUrl(), webPort: process.env.WEB_PORT }),
     emailAndPassword: {
       enabled: true,
       // Accounts are created by first-run setup, never by sign-up.

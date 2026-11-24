@@ -15,6 +15,8 @@ Recorded on 2026-11-18 from a fresh `jellyfin/jellyfin@sha256:fea863d0cd9ec44598
 | `items-movies.json`                                        | `GET /Items?ParentId=<library item>&Recursive=true&IncludeItemTypes=Movie&Fields=Path`                        |
 | `sessions.json`                                            | `GET /Sessions?activeWithinSeconds=600` with no client playing                                                |
 | `sessions-playing.json`                                    | `GET /Sessions?activeWithinSeconds=600` with the key, while two clients play (see below)                      |
+| `system-configuration.json`                                | `GET /System/Configuration` with the key, right after the wizard (2026-11-24)                                 |
+| `branding-configuration.json`                              | `GET /System/Configuration/branding` with the key, right after the wizard (2026-11-24)                        |
 
 Status codes 12.4 answered:
 
@@ -44,3 +46,5 @@ A third check on 2026-11-18, also on 12.4, for the play poller (`sessions-playin
 - The API key's calls make no session. After `POST /Sessions/Playing/Stopped` (204) the tablet's session stays listed without `NowPlayingItem`, and its `PlayState` has no `PlayMethod`.
 - `UserId` is the admin's ID in the form `AuthenticateByName` returns (32 hex digits, no dashes).
 - 12.4's OpenAPI (`/api-docs/openapi.json`) lists `PlayMethod` as `Transcode`, `DirectStream`, `DirectPlay`, and `TranscodeReason` as the 28 names `src/jellyfin/reasons.ts` maps.
+
+A fourth check on 2026-11-24, also on 12.4, for the branding step: a fresh server's `ServerName` is `""`, and its branding answer is `{"SplashscreenEnabled": false}`, leaving out `LoginDisclaimer` and `CustomCss` while they are null. `POST /System/Configuration` and `POST /System/Configuration/branding` answer 204 and **replace the whole object**: a branding body with only `CustomCss` drops the stored `LoginDisclaimer`. So the worker reads each object and writes it back whole. `/System/Configuration/Branding` is the same configuration. `GET /Branding/Configuration` answers the branding without a key; `GET /System/Configuration/branding` without one is 401. After the write, `GET /System/Info/Public` lists the new `ServerName`.

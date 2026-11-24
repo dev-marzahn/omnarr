@@ -29,6 +29,7 @@ beforeEach(async () => {
 });
 afterEach(() => {
   delete process.env.JELLYFIN_OFFLINE_LIBRARIES;
+  delete process.env.SITE_URL;
 });
 
 const PASSWORD = 'pl4nted-admin-password';
@@ -50,6 +51,7 @@ describe('startSetup (firstRun)', () => {
         { step: 'wizard', state: 'pending' },
         { step: 'apiKey', state: 'pending' },
         { step: 'libraries', state: 'pending' },
+        { step: 'branding', state: 'pending' },
         { step: 'testRefresh', state: 'pending' },
       ],
     });
@@ -82,7 +84,15 @@ describe('startSetup (firstRun)', () => {
     await startSetup();
     expect((await jobs())[0]!.payload).toMatchObject({ offline: true });
   });
+
+  test("omnarr's web address goes to the setup, for the link on Jellyfin's login page", async () => {
+    process.env.SITE_URL = 'https://media.example';
+    await startSetup();
+    expect((await jobs())[0]!.payload).toMatchObject({ webUrl: 'https://media.example' });
+  });
 });
+
+const BRANDING = { serverName: 'omnarr', loginDisclaimer: 'Sign in.', customCss: ':root {}' };
 
 /** The setup job's result as the worker reports it, with every step done. */
 const setupResult = (extra: Partial<Extract<JobResult, { action: 'setupJellyfin' }>> = {}): JobResult => ({
@@ -96,6 +106,7 @@ const setupResult = (extra: Partial<Extract<JobResult, { action: 'setupJellyfin'
     { libraryId: h.libraries.series, itemId: 'lib-series' },
     { libraryId: h.libraries.movies, itemId: 'lib-movies' },
   ],
+  brandingClaim: BRANDING,
   steps: SetupStep.options.map((step) => ({ step, state: 'done' as const, at: 1 })),
   ...extra,
 });
@@ -285,6 +296,7 @@ describe('api.jellyfin.status', () => {
       ['wizard', 'done'],
       ['apiKey', 'done'],
       ['libraries', 'pending'],
+      ['branding', 'pending'],
       ['testRefresh', 'pending'],
     ]);
   });
@@ -363,6 +375,25 @@ describe('api.jellyfin.rerunSetup', () => {
       admin: { username: 'admin', password: PASSWORD },
       locale: { uiCulture: 'de-DE', metadataCountry: 'DE', metadataLanguage: 'de' },
     });
+  });
+
+  test('a re-run tells the worker which branding omnarr set last, so it replaces only those values', async () => {
+    await givePassword();
+    await startSetup();
+    await completeSetup(setupResult({ brandingClaim: { serverName: 'omnarr' } }));
+    expect((await server())!.brandingClaim).toEqual({ serverName: 'omnarr' });
+    expect(await rerun()).toEqual({ ok: true });
+    const job = (await jobs()).find((j) => j.status === 'queued')!;
+    expect(job.payload).toMatchObject({ mode: 'rerun', brandingClaim: { serverName: 'omnarr' } });
+  });
+
+  test('a server row that never stored branding re-runs with no branding claimed, so only Jellyfin defaults are replaced', async () => {
+    await givePassword();
+    await startSetup();
+    await failSetupWith('credentialsNeeded');
+    expect(await rerun()).toEqual({ ok: true });
+    const job = (await jobs()).find((j) => j.status === 'queued')!;
+    expect(job.payload).not.toHaveProperty('brandingClaim');
   });
 
   test('a ready Jellyfin with an open jellyfinPasswordNotPushed gets a password push instead', async () => {

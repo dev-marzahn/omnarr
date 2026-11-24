@@ -18,6 +18,7 @@ import { v } from 'convex/values';
 import { components } from '../_generated/api';
 import type { Doc, Id } from '../_generated/dataModel';
 import { internalMutation, type MutationCtx, type QueryCtx } from '../_generated/server';
+import { configuredSiteUrl } from '../authOptions';
 import { enqueueJob, enqueuePasswordPushJob } from '../jobs/queue';
 import { acceptedSession } from '../jobs/worker';
 import { workerQuery } from '../lib/functions';
@@ -61,8 +62,10 @@ async function setupLibraries(ctx: QueryCtx): Promise<SetupPayload['libraries']>
   return rows.map((row) => ({ libraryId: row._id, name: row.name, kind: row.kind, rootPath: row.rootPath }));
 }
 
-/** The rest of a setup payload: the remote-access setting (Jellyfin's default until it exists) and the tests' offline libraries. */
-async function setupPayload(ctx: QueryCtx, mode: SetupPayload['mode'], admin: SetupPayload['admin'], locale: SetupPayload['locale']): Promise<SetupPayload> {
+type SetupPayloadOptions = Pick<SetupPayload, 'mode' | 'admin' | 'locale'> & { row: Doc<'jellyfinServer'> | null };
+
+async function setupPayload(ctx: QueryCtx, { mode, admin, locale, row }: SetupPayloadOptions): Promise<SetupPayload> {
+  const webUrl = configuredSiteUrl();
   return {
     class: 'maintenance',
     action: 'setupJellyfin',
@@ -72,6 +75,8 @@ async function setupPayload(ctx: QueryCtx, mode: SetupPayload['mode'], admin: Se
     libraries: await setupLibraries(ctx),
     remoteAccess: true,
     ...(process.env.JELLYFIN_OFFLINE_LIBRARIES ? { offline: true as const } : {}),
+    ...(webUrl ? { webUrl } : {}),
+    ...(row?.brandingClaim ? { brandingClaim: row.brandingClaim } : {}),
   };
 }
 
@@ -102,6 +107,7 @@ export async function applySetupResult(ctx: MutationCtx, result: SetupResult): P
     adminUserId: result.adminUserId,
     ...(result.apiKey ? { apiKey: result.apiKey } : {}),
     libraries: result.libraries,
+    brandingClaim: result.brandingClaim,
     steps: result.steps,
     lastSetupAt: Date.now(),
   });
@@ -215,7 +221,10 @@ export const enqueueRerun = internalMutation({
     const locale = row?.locale ?? localeFields('en-US');
     if (!row) await ctx.db.insert('jellyfinServer', { state: 'settingUp', steps: pendingSteps(), locale, libraries: [], ownerUserId: userId });
     // Each re-run is its own job, so an earlier one's key doesn't dedupe it away.
-    await enqueueJob(ctx, { payload: await setupPayload(ctx, 'rerun', { username, password }, locale), idempotencyKey: `setupJellyfin:rerun:${Date.now()}` });
+    await enqueueJob(ctx, {
+      payload: await setupPayload(ctx, { mode: 'rerun', admin: { username, password }, locale, row }),
+      idempotencyKey: `setupJellyfin:rerun:${Date.now()}`,
+    });
     return 'enqueued';
   },
 });
@@ -250,5 +259,8 @@ export async function startJellyfinSetup(
       libraries: [],
       ownerUserId: userId ?? (await userIdOf(ctx, username)),
     });
-  await enqueueJob(ctx, { payload: await setupPayload(ctx, 'firstRun', { username, password }, locale), idempotencyKey: FIRST_RUN_KEY });
+  await enqueueJob(ctx, {
+    payload: await setupPayload(ctx, { mode: 'firstRun', admin: { username, password }, locale, row: existing }),
+    idempotencyKey: FIRST_RUN_KEY,
+  });
 }

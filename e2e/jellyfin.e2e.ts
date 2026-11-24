@@ -54,6 +54,7 @@ describe('Jellyfin setup and password push', () => {
       ['wizard', 'done'],
       ['apiKey', 'done'],
       ['libraries', 'done'],
+      ['branding', 'done'],
       ['testRefresh', 'done'],
     ]);
     expect(status).toMatchObject({ state: 'ready', version: '12.4.0' });
@@ -62,6 +63,30 @@ describe('Jellyfin setup and password push', () => {
     const job = rows<{ idempotencyKey: string; status: string; payload?: unknown }>(d.env, 'jobs').find((j) => j.idempotencyKey === 'setupJellyfin:firstRun');
     expect(job).toMatchObject({ status: 'done' });
     expect(job!.payload).toBeUndefined();
+  });
+
+  test("branding: Jellyfin's login page shows omnarr's name, line and theme before anyone signs in", async () => {
+    const info = await (await fetch(`${d.jellyfinUrl}/System/Info/Public`)).json();
+    expect(info.ServerName).toBe('omnarr');
+    const loginPage = await (await fetch(`${d.jellyfinUrl}/Branding/Configuration`)).json();
+    expect(loginPage).toMatchObject({ SplashscreenEnabled: false });
+    expect(loginPage.LoginDisclaimer).toMatch(/^Sign in with your omnarr username and password\. To add movies and series, open /);
+    expect(loginPage.CustomCss).toContain('--jf-palette-primary-main: #0f172a;');
+    expect(rows<{ brandingClaim?: object }>(d.env, 'jellyfinServer')[0]!.brandingClaim).toMatchObject({ serverName: 'omnarr' });
+  });
+
+  test('libraries: omnarr creates them with scrub previews, made by the nightly task and kept out of the media folder', async () => {
+    const [server] = rows<{ apiKey: string }>(d.env, 'jellyfinServer');
+    const folders: { LibraryOptions: Record<string, unknown> }[] = await (
+      await fetch(`${d.jellyfinUrl}/Library/VirtualFolders`, { headers: { authorization: `MediaBrowser Token="${server!.apiKey}"` } })
+    ).json();
+    expect(folders.length).toBeGreaterThan(0);
+    for (const { LibraryOptions } of folders)
+      expect(LibraryOptions).toMatchObject({
+        EnableTrickplayImageExtraction: true,
+        ExtractTrickplayImagesDuringLibraryScan: false,
+        SaveTrickplayWithMedia: false,
+      });
   });
 
   test('password push: after /change-password, Jellyfin accepts the new password and refuses the old one', async () => {
