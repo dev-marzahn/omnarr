@@ -3,12 +3,24 @@
 // differing file with its mode and deletes the ones not used.
 import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 
 import type { VpnSettings } from '@omnarr/contracts';
-import { afterEach, beforeEach, describe, expect, test } from 'vite-plus/test';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vite-plus/test';
 
 import { renderVpnFiles, syncVpnFiles } from '../src/vpn/files.ts';
+
+const renamedInto = vi.hoisted(() => [] as string[]);
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs/promises')>();
+  return {
+    ...actual,
+    rename: async (from: string, to: string) => {
+      renamedInto.push(basename(to));
+      return actual.rename(from, to);
+    },
+  };
+});
 
 const WG_CONF = '[Interface]\nPrivateKey = planted-wg-key\nAddress = 10.13.13.2\n\n[Peer]\nPublicKey = pub\nEndpoint = 10.213.1.200:51820\n';
 const settings = (patch: Partial<VpnSettings> & Pick<VpnSettings, 'kind'>): VpnSettings => ({ savedAt: 1, ...patch });
@@ -97,7 +109,7 @@ describe('renderVpnFiles', () => {
     for (const secret of ['planted-wg-key', 'planted-ovpn-pass', 'planted-proton-key', 'planted-pia-pass', 'p1234567']) expect(text).not.toContain(secret);
   });
 
-  test('the hash changes with a secret file, so compose recreates gluetun; the save time doesn’t change it', () => {
+  test('the hash changes with a secret file, so gluetun restarts with it; the save time doesn’t change it', () => {
     const one = renderVpnFiles(settings({ kind: 'wireguardFile', wireguardConf: WG_CONF }));
     const again = renderVpnFiles(settings({ kind: 'wireguardFile', wireguardConf: WG_CONF, savedAt: 99 }));
     const other = renderVpnFiles(settings({ kind: 'wireguardFile', wireguardConf: WG_CONF.replace('planted-wg-key', 'another-key') }));
@@ -121,11 +133,11 @@ describe('syncVpnFiles', () => {
   afterEach(() => rmSync(dir, { recursive: true, force: true }));
   const mode = (name: string) => statSync(join(dir, name)).mode & 0o777;
 
-  test('writes gluetun.env 0644 and the secret files 0600', async () => {
+  test('writes every file 0600', async () => {
     const files = renderVpnFiles(settings({ kind: 'pia', username: 'p1', password: 'pw' }));
     expect(await syncVpnFiles(dir, files)).toEqual({ changed: true });
     expect(readdirSync(dir).sort()).toEqual(['gluetun.env', 'openvpn_password', 'openvpn_user']);
-    expect([mode('gluetun.env'), mode('openvpn_user'), mode('openvpn_password')]).toEqual([0o644, 0o600, 0o600]);
+    expect([mode('gluetun.env'), mode('openvpn_user'), mode('openvpn_password')]).toEqual([0o600, 0o600, 0o600]);
     expect(readFileSync(join(dir, 'openvpn_password'), 'utf8')).toBe('pw');
   });
 
@@ -156,6 +168,21 @@ describe('syncVpnFiles', () => {
     chmodSync(join(dir, 'wg0.conf'), 0o644);
     expect(await syncVpnFiles(dir, files)).toEqual({ changed: true });
     expect(mode('wg0.conf')).toBe(0o600);
+  });
+
+  const pia = (password: string) => renderVpnFiles(settings({ kind: 'pia', username: 'p1', password }));
+
+  test('a first choice: gluetun.env is written after the secret files, so gluetun never starts without them', async () => {
+    renamedInto.length = 0;
+    await syncVpnFiles(dir, pia('pw'));
+    expect(renamedInto).toEqual(['openvpn_user', 'openvpn_password', 'gluetun.env']);
+  });
+
+  test('a new secret of the same kind: gluetun.env is written after it', async () => {
+    await syncVpnFiles(dir, pia('pw-before'));
+    renamedInto.length = 0;
+    await syncVpnFiles(dir, pia('pw'));
+    expect(renamedInto).toEqual(['openvpn_password', 'gluetun.env']);
   });
 
   test('a missing folder with nothing to delete is no change', async () => {

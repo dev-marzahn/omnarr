@@ -16,10 +16,39 @@ services:
     restart: unless-stopped
     cap_add: [NET_ADMIN]
     devices: [/dev/net/tun]
-    # What the worker wrote from Settings › Downloads; it holds no secret.
-    env_file:
-      - path: ./vpn/gluetun.env
-        required: false
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        read_settings() { settings=$$(cat /vpn/gluetun.env 2>/dev/null); }
+        start_gluetun() {
+          read_settings
+          started=$$settings
+          exited_at=
+          (
+            while IFS= read -r line; do
+              case "$$line" in '' | '#'*) ;; *) export "$$line" ;; esac
+            done <<SETTINGS
+        $$started
+        SETTINGS
+            exec /gluetun-entrypoint
+          ) &
+          gluetun=$$!
+        }
+        stop_gluetun() { kill -TERM "$$gluetun" 2>/dev/null; wait "$$gluetun"; }
+        trap 'stop_gluetun; exit 0' TERM INT
+        start_gluetun
+        while :; do
+          sleep 5 &
+          wait $$!
+          read_settings
+          if kill -0 "$$gluetun" 2>/dev/null; then
+            [ "$$settings" = "$$started" ] || { stop_gluetun; start_gluetun; }
+          else
+            exited_at=$${exited_at:-$$(date +%s)}
+            if [ "$$settings" != "$$started" ] || [ $$(($$(date +%s) - exited_at)) -ge 60 ]; then start_gluetun; fi
+          fi
+        done
     environment:
       # The health server, which alone shows a dead WireGuard tunnel.
       HEALTH_SERVER_ADDRESS: ':9999'

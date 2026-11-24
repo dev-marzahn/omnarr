@@ -7,7 +7,7 @@
 // control keys from `setup`; the worker's reconciler applies the rest.
 import { execFileSync, spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { chmodSync, copyFileSync, existsSync, linkSync, mkdirSync, mkdtempSync, readdirSync, renameSync, writeFileSync } from 'node:fs';
+import { chmodSync, copyFileSync, existsSync, linkSync, mkdirSync, mkdtempSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
@@ -184,6 +184,7 @@ const composeEnv = (extra: Record<string, string> = {}): NodeJS.ProcessEnv => ({
   OMNARR_JELLYFIN_PORT: String(ports.jellyfin),
   OMNARR_DATA_DIR: 'e2e-data',
   OMNARR_SETUP_PASSWORD: secrets.setupPassword,
+  E2E_INSTALL_DIR: ensureProjectDir(),
   COMPOSE_FILE: '',
   ...dotEnv,
   ...extra,
@@ -198,21 +199,18 @@ let limitedFailure = '';
  * does, after the override so its `!reset`s clear qBittorrent's test network.
  */
 export type StackLayout = 'direct' | 'wireguard' | 'vpn';
-let stackLayout: StackLayout = 'direct';
 
-const layoutFiles = (layout: StackLayout): string[] =>
-  ({
-    direct: [join(shippedDir, 'compose.yml'), join(here, 'compose.test.yml')],
-    wireguard: [join(shippedDir, 'compose.yml'), join(here, 'compose.test.yml'), join(here, 'compose.wireguard.test.yml')],
-    vpn: [
-      join(shippedDir, 'compose.yml'),
-      join(here, 'compose.test.yml'),
-      join(here, 'compose.wireguard.test.yml'),
-      join(shippedDir, 'compose.vpn.yml'),
-      join(here, 'compose.vpn.test.yml'),
-    ],
-  })[layout];
-const composeFiles = () => ['--project-directory', ensureProjectDir(), ...layoutFiles(stackLayout).flatMap((file) => ['-f', file])];
+type DeployShape = { layout: StackLayout; deployFolder?: string };
+let deploy: DeployShape = { layout: 'direct' };
+
+const LAYOUT_FILES: Record<StackLayout, () => string[]> = {
+  direct: () => [join(shippedDir, 'compose.yml'), join(here, 'compose.test.yml')],
+  wireguard: () => [...LAYOUT_FILES.direct(), join(here, 'compose.wireguard.test.yml')],
+  vpn: () => [...LAYOUT_FILES.wireguard(), join(shippedDir, 'compose.vpn.yml'), join(here, 'compose.vpn.test.yml')],
+};
+const deployFiles = ({ layout, deployFolder }: DeployShape) => [...LAYOUT_FILES[layout](), ...(deployFolder ? [join(here, 'compose.coolify.test.yml')] : [])];
+
+const composeFiles = () => ['--project-directory', deploy.deployFolder ?? ensureProjectDir(), ...deployFiles(deploy).flatMap((file) => ['-f', file])];
 
 export function compose(args: string[], profiles = ['test'], input?: string): string {
   // `--wait` alone waits forever on a service that never turns healthy, such as a backend whose hook fails.
@@ -259,7 +257,7 @@ export function nzbgetRpc<T>(method: string, params: unknown[] = []): T {
  */
 export function qbittorrentApi<T>(path: string): T {
   // In the VPN layout qBittorrent is in gluetun's network namespace.
-  const base = stackLayout === 'vpn' ? 'http://gluetun:8080' : 'http://qbittorrent:8080';
+  const base = deploy.layout === 'vpn' ? 'http://gluetun:8080' : 'http://qbittorrent:8080';
   const script = [
     "const fs = require('node:fs');",
     "const password = fs.readFileSync('/run/omnarr/secrets/qbittorrent_control_password', 'utf8').trim();",
@@ -373,8 +371,15 @@ export function blockOpenvpnServer(blocked: boolean): void {
  * worker with GLUETUN_URL, qBittorrent in gluetun's network.
  */
 export function switchToVpnLayout(): void {
-  stackLayout = 'vpn';
+  deploy = { layout: 'vpn' };
   compose(['up', '-d', '--wait'], ['test', 'worker']);
+}
+
+export function deployLikeCoolify(): string {
+  const folder = mkdtempSync(join(tmpdir(), 'omnarr-e2e-coolify-'));
+  deploy = { layout: 'vpn', deployFolder: folder };
+  compose(['up', '-d', '--wait', '--no-deps', '--force-recreate', 'gluetun', 'qbittorrent'], ['test', 'worker']);
+  return folder;
 }
 
 /** Whether a path exists under /data, seen from the worker container. */
@@ -621,7 +626,7 @@ export async function up(options: UpOptions = {}): Promise<Deployment> {
 
 async function bringUp(options: UpOptions): Promise<Deployment> {
   const started = Date.now();
-  stackLayout = options.layout ?? 'direct';
+  deploy = { layout: options.layout ?? 'direct' };
   testLimits = JSON.stringify({
     ...E2E_LIMITS,
     ...(options.torrentStallMs === undefined ? {} : { torrentStallMs: options.torrentStallMs }),
@@ -636,7 +641,7 @@ async function bringUp(options: UpOptions): Promise<Deployment> {
   timed('media', generateMedia);
   // `--wait`: the backend is healthy only after its pre-push hook, the release and its post-apply hook.
   timed('compose up', () => compose(['up', '-d', '--wait']));
-  if (stackLayout === 'wireguard') await timed('WireGuard server', startWireguardServer);
+  if (deploy.layout === 'wireguard') await timed('WireGuard server', startWireguardServer);
   const url = `http://127.0.0.1:${ports.convex}`;
   const siteUrl = `http://127.0.0.1:${ports.convexSite}`;
   const webUrl = `http://127.0.0.1:${ports.web}`;
@@ -955,6 +960,15 @@ async function dumpFailure(): Promise<void> {
   console.log(`e2e: failure dump in ${dir}`);
 }
 
+const removeAsRootSinceSetupOwnsBackups = (folder: string) =>
+  spawnSync(
+    'docker',
+    ['run', '--rm', '--user', '0:0', '--entrypoint', 'rm', '-v', `${dirname(folder)}:/tmpdir`, WORKER_IMAGE, '-rf', `/tmpdir/${basename(folder)}`],
+    {
+      stdio: 'ignore',
+    },
+  );
+
 /**
  * Removes the stack and its volumes; nothing in it is kept, so no container gets more than a second to stop.
  * After a failure it first writes the failure dump.
@@ -973,18 +987,11 @@ export async function down(): Promise<void> {
     },
   );
   process.stderr.write(`STACK: down ${((Date.now() - started) / 1000).toFixed(1)} s\n`);
-  // `setup` made ./backups root's, so the project folder goes through a container.
-  if (projectDir)
-    spawnSync(
-      'docker',
-      ['run', '--rm', '--user', '0:0', '--entrypoint', 'rm', '-v', `${dirname(projectDir)}:/tmpdir`, WORKER_IMAGE, '-rf', `/tmpdir/${basename(projectDir)}`],
-      {
-        stdio: 'ignore',
-      },
-    );
+  if (projectDir) removeAsRootSinceSetupOwnsBackups(projectDir);
   projectDir = '';
+  if (deploy.deployFolder) rmSync(deploy.deployFolder, { recursive: true, force: true });
   dotEnv = {};
-  stackLayout = 'direct';
+  deploy = { layout: 'direct' };
   useRelease();
   // A kept stack's slot (host.ts), when down() runs outside run.ts, which frees its own at its end.
   if (process.env.E2E_SLOT_HELD !== '1') releaseSlot(PROJECT);

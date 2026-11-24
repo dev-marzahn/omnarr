@@ -43,7 +43,7 @@ Every setting is optional. Save the release's `env.example` in the install folde
 
 **Site definitions.** Settings › Indexers › Add indexer › Site › Other site lists the sites of Prowlarr's definitions, which the worker downloads at its first start and once a day; System › Site definitions shows the last download and has "Check for definition updates". omnarr ships no definition file. omnarr runs the public sites that need no FlareSolverr; the others are listed with the reason it can't run them. **Your own definitions** go in the `definitions` folder of the install, as Cardigann `.yml` files; a file with the `id` of one of Prowlarr's replaces it. `setup` creates the folder, empty and owned by `PUID:PGID`, and leaves its files alone. The worker reads the folder at each definitions download.
 
-**The VPN layout.** Choose a VPN in Settings › Downloads, add `COMPOSE_FILE=compose.yml:compose.vpn.yml` to `.env`, and run `docker compose up -d`. To recreate gluetun, recreate qBittorrent with it, or qBittorrent keeps a dead network:
+**The VPN layout.** Choose a VPN in Settings › Downloads, add `COMPOSE_FILE=compose.yml:compose.vpn.yml` to `.env`, and run `docker compose up -d`. Gluetun reads its settings from `vpn/`, which the worker writes: a later VPN change in Settings › Downloads restarts gluetun inside its container within a few seconds, and needs no command. To recreate gluetun, recreate qBittorrent with it, or qBittorrent keeps a dead network:
 
 ```sh
 docker compose up -d --force-recreate gluetun qbittorrent
@@ -69,11 +69,12 @@ Without a web URL, omnarr accepts sign-in from any address on the web port, whic
 1. Add a resource from the public repository `https://github.com/dev-marzahn/omnarr`, branch **`release`**, build pack Docker Compose. `release` always holds the newest release's files; `main` may need images that aren't released yet.
 2. Set Docker Compose Location to `/compose.yml` for the direct layout, or `/compose.vpn.merged.yml` for the VPN layout (`compose.yml` with `compose.vpn.yml` merged in).
 3. Set the variables from [Configuration](#configuration) in the resource's Environment Variables instead of `.env`. Set `OMNARR_DATA_DIR` to the media folder's absolute path on the Coolify server, such as `/srv/media`: unset, the media lands in Coolify's own folder for the resource. Then deploy, and check in "Show Deployable Compose" that every `/data` mount's `source` is your folder.
-4. To switch to the VPN layout later, choose the VPN in Settings › Downloads, change Docker Compose Location to `/compose.vpn.merged.yml` and redeploy. omnarr's "Add COMPOSE_FILE…" notice means this step.
+4. To switch to the VPN layout later, choose the VPN in Settings › Downloads, change Docker Compose Location to `/compose.vpn.merged.yml` and redeploy. omnarr's "Add COMPOSE_FILE…" notice means this step. Later VPN changes in Settings › Downloads need no redeploy.
 5. After each release, redeploy. Coolify redeploys on its own only through a webhook on a repository you administer.
 
 Then:
 
+- Up to 100.0.2, gluetun on Coolify didn't get its settings: Coolify runs `docker compose` from another folder than the one `vpn/` is in. If you copied `vpn/gluetun.env`'s lines into the resource's Environment Variables to work around it, delete those variables and redeploy once you run a newer release. Left there, a variable that omnarr no longer writes, such as an old provider's, stays in gluetun's settings.
 - Coolify deploys with `docker compose`, so the start order holds. `setup` has `restart: "no"`, and Coolify 4.0.0-beta.445 and later leave such a service out of the resource's status, so the exited container doesn't make the stack look degraded. On an older Coolify, update it: a compose file from git can't take Coolify's `exclude_from_hc`, which plain Docker Compose refuses.
 - Coolify's log view shows `setup`'s output, including the generated setup password.
 - If a front end doesn't wait for `setup` to finish, start it first: `docker compose up -d setup`, then `docker compose up -d`.
