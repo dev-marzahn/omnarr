@@ -9,6 +9,18 @@ export default defineNuxtConfig({
   ssr: false,
   modules: ['@nuxt/ui'],
   css: ['~/assets/css/main.css'],
+  // The mark from public/: SVG for the tab, ICO for browsers that only ask for /favicon.ico,
+  // and a full-bleed PNG for a phone's home screen (iOS takes no SVG and rounds the corners itself).
+  app: {
+    head: {
+      link: [
+        // The ICO first, with its size, so a browser that reads both picks the SVG.
+        { rel: 'icon', href: '/favicon.ico', sizes: '32x32' },
+        { rel: 'icon', type: 'image/svg+xml', href: '/favicon.svg' },
+        { rel: 'apple-touch-icon', href: '/apple-touch-icon.png' },
+      ],
+    },
+  },
   // Dark by default; the user menu's Appearance changes it.
   colorMode: { preference: 'dark' },
   runtimeConfig: {
