@@ -91,6 +91,7 @@ export const WorkSummary = z.object({
    * their summed speed. Absent when none runs.
    */
   activeDownloads: z.object({ count: z.number(), fraction: z.number().optional(), bytesPerSec: z.number().optional() }).optional(),
+  activePreparations: z.object({ count: z.number(), fraction: z.number().optional() }).optional(),
   /**
    * On `library.list` only: the Work's torrents still seeding to their goals,
    * each once. Absent when none seeds.

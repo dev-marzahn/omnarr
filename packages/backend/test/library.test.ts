@@ -338,4 +338,73 @@ describe('preparation on the Work page', () => {
     expect(queued.preparation).toMatchObject({ steps: ['remux'] });
     expect(queued.preparation?.fraction).toBeUndefined();
   });
+
+  test("the Work's summary counts its pending preparations, with the running one's fraction once it reports", async () => {
+    const workId = await seedShow(t, libraries);
+    for (const episode of [1, 2]) {
+      const unitId = await seedUnit(t, workId, episode);
+      await seedFile(t, { unitIds: [unitId], probe: MKV_PROBE, path: `${SEASON_1}/${episode}.mkv` });
+    }
+    const summary = async () => (await admin.query(api.api.library.list, { kind: 'series' })).works[0]!;
+    expect((await summary()).activePreparations).toBeUndefined();
+
+    await admin.mutation(api.api.library.prepareAll, { workId });
+    expect((await summary()).activePreparations).toEqual({ count: 2 });
+    expect((await admin.query(api.api.library.detail, { workId }))!.work.activePreparations).toEqual({ count: 2 });
+
+    const [job] = await (await prepareWorker(t)).claim();
+    await t.mutation(api.jobs.queue.progress, { ...worker, jobId: job!.jobId, leaseEpoch: job!.leaseEpoch, fraction: 0.25, detail: 'Remux Matroska → MP4' });
+    expect((await summary()).activePreparations).toEqual({ count: 2, fraction: 0.25 });
+  });
+
+  test("the Timeline carries the pending preparation's fraction and detail; none once nothing prepares", async () => {
+    const workId = await seedShow(t, libraries);
+    const [preparing, idle] = [await seedUnit(t, workId, 1), await seedUnit(t, workId, 2)];
+    await seedFile(t, { unitIds: [preparing!], probe: MKV_PROBE, path: `${SEASON_1}/1.mkv` });
+    await seedFile(t, { unitIds: [idle!], probe: PREPARED_PROBE, path: `${SEASON_1}/2.mkv`, fits: true });
+    const timeline = async (unitId: typeof preparing) => (await admin.query(api.api.units.timeline, { unitId: unitId! }))!;
+
+    await admin.mutation(api.api.library.prepareAll, { workId });
+    expect((await timeline(preparing)).preparation).toEqual({});
+
+    const [job] = await (await prepareWorker(t)).claim();
+    await t.mutation(api.jobs.queue.progress, { ...worker, jobId: job!.jobId, leaseEpoch: job!.leaseEpoch, fraction: 0, detail: 'Checking the file' });
+    expect((await timeline(preparing)).preparation).toEqual({ fraction: 0, detail: 'Checking the file' });
+    await t.mutation(api.jobs.queue.progress, { ...worker, jobId: job!.jobId, leaseEpoch: job!.leaseEpoch, fraction: 0.6, detail: 'Remux Matroska → MP4' });
+    expect((await timeline(preparing)).preparation).toEqual({ fraction: 0.6, detail: 'Remux Matroska → MP4' });
+    expect((await timeline(idle)).preparation).toBeUndefined();
+  });
+
+  test('a job requeued with a progress row left from its lease counts as preparing, with no fraction or detail', async () => {
+    const workId = await seedShow(t, libraries);
+    const unitId = (await seedUnit(t, workId, 1))!;
+    await seedFile(t, { unitIds: [unitId], probe: MKV_PROBE, path: `${SEASON_1}/1.mkv` });
+    await admin.mutation(api.api.library.prepareAll, { workId });
+    const [job] = await (await prepareWorker(t)).claim();
+    const lease = { ...worker, jobId: job!.jobId, leaseEpoch: job!.leaseEpoch };
+    await t.mutation(api.jobs.queue.progress, { ...lease, fraction: 0.4, detail: 'Video conversion HEVC → H.264' });
+    await t.mutation(api.jobs.queue.release, lease);
+
+    expect((await admin.query(api.api.units.timeline, { unitId }))!.preparation).toEqual({});
+    expect((await admin.query(api.api.library.list, { kind: 'series' })).works[0]!.activePreparations).toEqual({ count: 1 });
+    const [row] = (await admin.query(api.api.library.detail, { workId }))!.units;
+    expect(row!.preparation).not.toHaveProperty('fraction');
+    expect(row!.preparation).not.toHaveProperty('detail');
+  });
+
+  test("activePreparations' fraction is the mean of the leased jobs' fractions", async () => {
+    const workId = await seedShow(t, libraries);
+    for (const episode of [1, 2, 3]) {
+      const unitId = await seedUnit(t, workId, episode);
+      await seedFile(t, { unitIds: [unitId], probe: MKV_PROBE, path: `${SEASON_1}/${episode}.mkv` });
+    }
+    await admin.mutation(api.api.library.prepareAll, { workId });
+    const w = await prepareWorker(t);
+    const [first, second] = await w.claim(2);
+    await t.mutation(api.jobs.queue.progress, { ...worker, jobId: first!.jobId, leaseEpoch: first!.leaseEpoch, fraction: 0.2 });
+    await t.mutation(api.jobs.queue.progress, { ...worker, jobId: second!.jobId, leaseEpoch: second!.leaseEpoch, fraction: 0.6 });
+    const { activePreparations } = (await admin.query(api.api.library.list, { kind: 'series' })).works[0]!;
+    expect(activePreparations?.count).toBe(3);
+    expect(activePreparations?.fraction).toBeCloseTo(0.4);
+  });
 });

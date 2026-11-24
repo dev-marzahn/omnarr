@@ -190,6 +190,7 @@ export const Timeline = z
     workKind: WorkKind,
     /** The running Grab's Download, for the progress card; absent when no Grab runs. */
     download: UnitDownload.optional(),
+    preparation: z.object({ fraction: z.number().optional(), detail: z.string().optional() }).strict().optional(),
     /**
      * The newest run's torrent while it seeds to its goal, with its run's
      * release title for the seeding card.
