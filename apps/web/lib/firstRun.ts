@@ -94,6 +94,8 @@ export function checklist(status: SystemStatus, clients: DownloadClientsDetail, 
  */
 export const usenetSaved = (usenet: DownloadClientsDetail['usenet']): boolean => usenet.enabled && usenet.server !== undefined;
 
+export const usenetStepCanContinue = (usenet: DownloadClientsDetail['usenet'], backupsUnsaved: boolean): boolean => usenetSaved(usenet) && !backupsUnsaved;
+
 const ended = (scan: ScanStatus) => scan.run?.trigger === 'firstRun' && ['ready', 'failed', 'cancelled'].includes(scan.run.state);
 
 /** The finish step starts `scan.start('firstRun')` once, when no first-run scan exists. */

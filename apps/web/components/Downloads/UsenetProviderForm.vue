@@ -2,7 +2,17 @@
 import { api } from '@omnarr/backend/api';
 import type { DownloadClientsDetail, UsenetBackupServerDetail, UsenetLimit } from '@omnarr/contracts';
 
-import { canSaveProvider, configStateText, needsLoginTest, providerTestText, testOfServer, usageText, type ProviderValues } from '~/lib/downloads';
+import {
+  configStateText,
+  needsLoginTest,
+  providerTestText,
+  SAVE_CANCELLED_TEXT,
+  saveStepAfterTest,
+  testOfServer,
+  usageText,
+  type ProviderValues,
+  type SaveInFlight,
+} from '~/lib/downloads';
 
 const props = withDefaults(
   defineProps<{
@@ -13,7 +23,7 @@ const props = withDefaults(
   }>(),
   { backup: undefined },
 );
-const emit = defineEmits<{ saved: [] }>();
+const emit = defineEmits<{ saved: []; unsaved: [boolean] }>();
 
 const testUsenetServer = useMutation(api.api.downloadClients.testUsenetServer);
 const saveUsenet = useMutation(api.api.downloadClients.saveUsenet);
@@ -44,7 +54,6 @@ const settings = reactive({
 const values = (): ProviderValues => ({ ...state, host: state.host.trim() });
 const limit = (): UsenetLimit | undefined =>
   props.backup && settings.monthlyLimitGb ? { monthlyLimitGb: settings.monthlyLimitGb, resetDay: settings.resetDay } : undefined;
-/** The login, as "Test login" and the main server's save take it. */
 const input = () => {
   const { password, ...rest } = values();
   return { ...rest, ...(password ? { password } : {}) };
@@ -57,54 +66,55 @@ const settingsChanged = computed(() => {
   return settings.priority !== current?.priority || wanted?.monthlyLimitGb !== current?.limit?.monthlyLimitGb || wanted?.resetDay !== current?.limit?.resetDay;
 });
 
-/** What the form held when "Test login" was last pressed here. */
-const tested = ref<ProviderValues>();
-const testing = ref(false);
-const saving = ref(false);
+const saveInFlight = ref<SaveInFlight>();
+const storing = ref(false);
 const error = ref<string>();
 
 const complete = computed(() => state.host.trim() !== '' && state.port >= 1 && state.port <= 65_535 && state.connections >= 1);
 const limitValid = computed(() => settings.monthlyLimitGb === null || (settings.monthlyLimitGb > 0 && settings.resetDay >= 1 && settings.resetDay <= 28));
 const testNeeded = computed(() => needsLoginTest(values(), stored.value));
-const canSave = computed(
-  () =>
-    !testing.value &&
-    complete.value &&
-    limitValid.value &&
-    (testNeeded.value ? canSaveProvider(values(), tested.value, providerTest.value) : settingsChanged.value),
-);
+const unsaved = computed(() => testNeeded.value || settingsChanged.value);
+const busy = computed(() => saveInFlight.value !== undefined || storing.value);
+const canSave = computed(() => !busy.value && complete.value && limitValid.value && unsaved.value);
 const result = computed(() => (providerTest.value ? providerTestText(providerTest.value, props.workerConnected) : undefined));
 
-async function runTest() {
-  testing.value = true;
-  error.value = undefined;
-  const snapshot = values();
-  try {
-    await testUsenetServer({ input: input(), ...(props.backup ? { backupId: props.backup.id } : {}) });
-    tested.value = snapshot;
-  } catch {
-    error.value = "The test couldn't be started. Try again.";
-  } finally {
-    testing.value = false;
-  }
-}
+watch(unsaved, (value) => emit('unsaved', value), { immediate: true });
 
 async function save() {
   if (!canSave.value) return;
-  saving.value = true;
   error.value = undefined;
+  if (!testNeeded.value) return store();
+  saveInFlight.value = { values: values(), testBefore: props.usenet.providerTest?.jobId, backupId: props.backup?.id };
+  try {
+    await testUsenetServer({ input: input(), ...(props.backup ? { backupId: props.backup.id } : {}) });
+  } catch {
+    saveInFlight.value = undefined;
+    error.value = "The login test couldn't be started. Try again.";
+  }
+}
+
+watch([() => props.usenet.providerTest, () => values()], () => {
+  if (!saveInFlight.value) return;
+  const step = saveStepAfterTest(saveInFlight.value, values(), props.usenet.providerTest);
+  if (step === 'waitForTest') return;
+  saveInFlight.value = undefined;
+  if (step === 'save') void store();
+  if (step === 'formChanged' || step === 'testReplaced') error.value = SAVE_CANCELLED_TEXT[step];
+});
+
+async function store() {
+  storing.value = true;
   try {
     if (props.backup) {
       const wanted = limit();
       await saveUsenetBackup({ backupId: props.backup.id, input: { ...input(), ...(wanted ? { limit: wanted } : {}) }, priority: settings.priority });
     } else await saveUsenet({ input: input() });
     state.password = '';
-    tested.value = undefined;
     emit('saved');
   } catch {
     error.value = props.backup ? "The backup server couldn't be saved. Try again." : "The provider couldn't be saved. Try again.";
   } finally {
-    saving.value = false;
+    storing.value = false;
   }
 }
 
@@ -170,11 +180,9 @@ const usage = computed(() => usageText(props.backup?.server?.limit, props.backup
     <div class="flex flex-wrap items-center gap-2 border-t border-default pt-4">
       <p class="flex-1 min-w-48 text-xs text-muted">
         {{ configStateText(usenet, now) }}
-        <span v-if="!canSave && testNeeded" class="block">Save unlocks after a passing test of these values.</span>
       </p>
       <slot name="actions" />
-      <UButton color="neutral" variant="outline" icon="i-lucide-log-in" label="Test login" :loading="testing" :disabled="!complete" @click="runTest" />
-      <UButton type="submit" label="Save" :loading="saving" :disabled="!canSave" />
+      <UButton type="submit" label="Save" :loading="busy" :disabled="!canSave" />
     </div>
   </UForm>
 </template>
