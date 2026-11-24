@@ -1,21 +1,24 @@
-<!--
-  The Usenet provider: the UsenetProviderForm, with "Test login" and the applied state; saving moves on. A provider already
-  saved (in Settings, or on an earlier visit) moves on without a new save: while the form is unchanged, "Continue with the
-  saved provider" is the primary button, and "Save and continue" (disabled until an edit) steps back.
--->
 <script setup lang="ts">
 import { api } from '@omnarr/backend/api';
 
-import { COPY, usenetPrimary, usenetSaved } from '~/lib/firstRun';
+import { COPY, usenetSaved, usenetStepCanContinue, usenetStepLeadingButton } from '~/lib/firstRun';
 
 definePageMeta({ layout: 'setup', step: 'usenet' });
 
 const { data } = useQuery(api.api.downloadClients.get, {});
 const { data: status } = useQuery(api.api.system.status, {});
 const workerConnected = computed(() => status.value?.worker?.connected === true && status.value.worker.accepted);
+const mainServerSaved = computed(() => data.value !== undefined && usenetSaved(data.value.usenet));
+const mainServerUnsaved = ref(false);
+const backupsUnsaved = ref(false);
+const canContinue = computed(() => data.value !== undefined && usenetStepCanContinue(data.value.usenet, backupsUnsaved.value));
+const continueLeads = computed(
+  () =>
+    data.value !== undefined &&
+    usenetStepLeadingButton(data.value.usenet, { mainServerUnsaved: mainServerUnsaved.value, backupsUnsaved: backupsUnsaved.value }) === 'continue',
+);
 const advance = useAdvance();
-const unchanged = ref(true);
-const primary = computed(() => (data.value ? usenetPrimary(data.value.usenet, unchanged.value) : 'save'));
+const usenetToasts = useUsenetToasts();
 </script>
 
 <template>
@@ -28,20 +31,28 @@ const primary = computed(() => (data.value ? usenetPrimary(data.value.usenet, un
       <DownloadsUsenetProviderForm
         :usenet="data.usenet"
         :worker-connected="workerConnected"
-        submit-label="Save and continue"
-        :submit-primary="primary === 'save'"
-        @unchanged="unchanged = $event"
-        @saved="advance('torrents')"
+        :save-leads="!continueLeads"
+        @unsaved="mainServerUnsaved = $event"
+        @saved="usenetToasts.providerSaved"
       />
+      <template v-if="mainServerSaved" #footer>
+        <DownloadsUsenetBackupServers
+          :usenet="data.usenet"
+          :worker-connected="workerConnected"
+          @saved="usenetToasts.backupSaved"
+          @removed="usenetToasts.backupRemoved"
+          @unsaved="backupsUnsaved = $event"
+        />
+      </template>
     </UCard>
     <div class="flex items-center gap-2 max-lg:flex-col-reverse max-lg:items-stretch">
       <UButton color="neutral" variant="link" to="/setup/indexer" icon="i-lucide-arrow-left" label="Back" />
       <UButton
-        v-if="data && usenetSaved(data.usenet)"
         class="lg:ms-auto max-lg:justify-center"
-        :color="primary === 'continue' ? 'primary' : 'neutral'"
-        :variant="primary === 'continue' ? 'solid' : 'outline'"
-        label="Continue with the saved provider"
+        :color="continueLeads ? 'primary' : 'neutral'"
+        :variant="continueLeads ? 'solid' : 'outline'"
+        :disabled="!canContinue"
+        label="Continue"
         @click="advance('torrents')"
       />
     </div>

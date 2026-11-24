@@ -134,7 +134,6 @@ export type Notice = { color: 'success' | 'error' | 'neutral'; title: string; de
 
 const provider = (test: Pick<ProviderTest, 'host' | 'port' | 'ssl'>) => `${test.host}:${test.port} ${test.ssl ? 'over SSL' : 'without SSL'}`;
 
-/** The latest "Test login", as the form shows it. */
 export function providerTestText(test: ProviderTest, workerConnected: boolean): Notice {
   switch (test.outcome) {
     case 'ok':
@@ -154,10 +153,6 @@ export function providerTestText(test: ProviderTest, workerConnected: boolean): 
   }
 }
 
-/**
- * The row's latest "Test login" if it was this form's: the main server's form (`backupId`
- * absent) or that backup server's. The row keeps one test, so another form's test hides it.
- */
 export function testOfServer(test: ProviderTest | undefined, backupId: string | undefined): ProviderTest | undefined {
   return test && test.backupId === backupId ? test : undefined;
 }
@@ -181,10 +176,6 @@ export function usageText(limit: UsenetLimit | undefined, usage: UsenetUsageDeta
 /** The login fields the card stores for a server; the limit and the priority aren't part of the login. */
 export type StoredLogin = Pick<ProviderValues, 'host' | 'port' | 'ssl' | 'username' | 'connections'>;
 
-/**
- * Whether Save needs a passing "Test login" first: always for a server not saved yet or a
- * changed login; not for the stored login with a blank password, so a new limit or priority saves alone.
- */
 export function needsLoginTest(form: ProviderValues, stored: StoredLogin | undefined): boolean {
   if (!stored || form.password !== '') return true;
   return (['host', 'port', 'ssl', 'username', 'connections'] as const).some((field) => form[field] !== stored[field]);
@@ -193,20 +184,22 @@ export function needsLoginTest(form: ProviderValues, stored: StoredLogin | undef
 /** What the provider form holds; a blank password means the stored one. */
 export type ProviderValues = { host: string; port: number; ssl: boolean; username: string; password: string; connections: number };
 
-/**
- * Save needs a passing test of exactly the values on the form: `tested`
- * is what the form held when "Test login" was last pressed, `test` the row's latest.
- */
-export function canSaveProvider(form: ProviderValues, tested: ProviderValues | undefined, test: ProviderTest | undefined): boolean {
+export type SaveInFlight = { values: ProviderValues; testBefore: ProviderTest['jobId'] | undefined; backupId: string | undefined };
+export type SaveStep = 'waitForTest' | 'save' | 'loginFailed' | 'formChanged' | 'testReplaced';
+
+export const SAVE_CANCELLED_TEXT = {
+  formChanged: 'The form changed during the login test. Save again.',
+  testReplaced: 'Another login test replaced this one. Save again.',
+} as const;
+
+export function saveStepAfterTest(inFlight: SaveInFlight, form: ProviderValues, rowTest: ProviderTest | undefined): SaveStep {
   const fields = Object.keys(form) as (keyof ProviderValues)[];
-  return (
-    test?.outcome === 'ok' &&
-    test.host === form.host &&
-    test.port === form.port &&
-    test.ssl === form.ssl &&
-    tested !== undefined &&
-    fields.every((field) => tested[field] === form[field])
-  );
+  if (fields.some((field) => inFlight.values[field] !== form[field])) return 'formChanged';
+  if (!rowTest || rowTest.jobId === inFlight.testBefore) return 'waitForTest';
+  if (rowTest.backupId !== inFlight.backupId) return 'testReplaced';
+  if (rowTest.outcome === 'pending') return 'waitForTest';
+  const testedThisForm = rowTest.host === form.host && rowTest.port === form.port && rowTest.ssl === form.ssl;
+  return rowTest.outcome === 'ok' && testedThisForm ? 'save' : 'loginFailed';
 }
 
 type Usenet = DownloadClientsDetail['usenet'];

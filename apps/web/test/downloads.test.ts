@@ -3,7 +3,6 @@ import type { PortState, ProviderTest, VpnState } from '@omnarr/contracts';
 import { describe, expect, test } from 'vite-plus/test';
 
 import {
-  canSaveProvider,
   codeParts,
   configStateText,
   connectionStatusText,
@@ -11,6 +10,7 @@ import {
   peerPortText,
   portStateText,
   providerTestText,
+  saveStepAfterTest,
   seedGoalFromValues,
   seedGoalValues,
   needsLoginTest,
@@ -93,36 +93,47 @@ describe('providerTestText', () => {
   });
 });
 
-// Save needs a passing test of exactly the values on the form.
-describe('canSaveProvider', () => {
+describe('saveStepAfterTest: Save tests the values on the form, then saves only if that test passes', () => {
   const form: ProviderValues = { host: 'news.example', port: 563, ssl: true, username: 'user123', password: 'secret', connections: 20 };
+  const inFlight = { values: { ...form }, testBefore: 'j0' as ProviderTest['jobId'], backupId: undefined };
 
-  test('a passing test of the values on the form allows Save', () => {
-    expect(canSaveProvider(form, { ...form }, providerTest())).toBe(true);
+  test('a passing test of the values on the form saves', () => {
+    expect(saveStepAfterTest(inFlight, form, providerTest())).toBe('save');
+  });
+
+  test('the test this Save started is still running, or the row still shows the one from before: wait', () => {
+    expect(saveStepAfterTest(inFlight, form, providerTest({ outcome: 'pending' }))).toBe('waitForTest');
+    expect(saveStepAfterTest(inFlight, form, providerTest({ jobId: 'j0' as ProviderTest['jobId'] }))).toBe('waitForTest');
+    expect(saveStepAfterTest(inFlight, form, undefined)).toBe('waitForTest');
+  });
+
+  test.each(['authRejected', 'failed'] as const)('a %s test saves nothing', (outcome) => {
+    expect(saveStepAfterTest(inFlight, form, providerTest({ outcome }))).toBe('loginFailed');
   });
 
   test.each([
     ['username', { username: 'other' }],
     ['password', { password: 'other' }],
     ['connections', { connections: 10 }],
-  ] as const)('a test run before the %s changed no longer counts', (_, change) => {
-    expect(canSaveProvider({ ...form, ...change }, form, providerTest())).toBe(false);
+  ] as const)('a %s changed while the test ran cancels the save', (_, change) => {
+    expect(saveStepAfterTest(inFlight, { ...form, ...change }, providerTest())).toBe('formChanged');
+  });
+
+  test('an edit cancels a save whose test is still pending, as with the worker offline', () => {
+    expect(saveStepAfterTest(inFlight, { ...form, username: 'other' }, providerTest({ outcome: 'pending' }))).toBe('formChanged');
+  });
+
+  test("another form's test replacing the row's test cancels the save", () => {
+    expect(saveStepAfterTest(inFlight, form, providerTest({ backupId: 'b1' as ProviderTest['backupId'] }))).toBe('testReplaced');
+    expect(saveStepAfterTest({ ...inFlight, backupId: 'b1' }, form, providerTest())).toBe('testReplaced');
   });
 
   test.each([
     ['host', { host: 'eu.news.example' }],
     ['port', { port: 443 }],
     ['ssl', { ssl: false }],
-  ] as const)("a passing test whose %s isn't the form's doesn't count", (_, other) => {
-    expect(canSaveProvider(form, form, providerTest(other))).toBe(false);
-  });
-
-  test.each(['pending', 'authRejected', 'failed'] as const)('a %s test does not allow Save', (outcome) => {
-    expect(canSaveProvider(form, form, providerTest({ outcome }))).toBe(false);
-  });
-
-  test('a passing test from before the form opened (none pressed here) does not count', () => {
-    expect(canSaveProvider(form, undefined, providerTest())).toBe(false);
+  ] as const)("a passing test whose %s isn't the form's saves nothing", (_, other) => {
+    expect(saveStepAfterTest(inFlight, form, providerTest(other))).toBe('loginFailed');
   });
 });
 
@@ -147,7 +158,7 @@ describe("usageText: a server's monthly limit on the card", () => {
   });
 });
 
-describe('needsLoginTest: only a change to the login asks for a new "Test login"', () => {
+describe('needsLoginTest: only a change to the login makes Save test it again', () => {
   const stored = { host: 'news.example', port: 563, ssl: true, username: 'user123', connections: 20 };
   const form: ProviderValues = { ...stored, password: '' };
 
@@ -167,7 +178,7 @@ describe('needsLoginTest: only a change to the login asks for a new "Test login"
   });
 });
 
-describe('testOfServer: each form sees only its own server’s "Test login"', () => {
+describe('testOfServer: each form sees only its own server’s login test', () => {
   test("the main server's form sees a test that names no backup, not a backup's", () => {
     expect(testOfServer(providerTest(), undefined)).toEqual(providerTest());
     expect(testOfServer(providerTest({ backupId: 'b1' }), undefined)).toBeUndefined();
@@ -229,7 +240,7 @@ describe('configStateText', () => {
     expect(configStateText({ enabled: false, config: 'pending' }, NOW)).toBe('Not set up: no provider saved yet');
   });
 
-  test('a Test login before the first save leaves it not set up, never a provider that is off', () => {
+  test('a login test that failed before the first save leaves it not set up, never a provider that is off', () => {
     expect(configStateText({ enabled: false, config: 'failed', applyFailure: 'clientUnreachable' }, NOW)).toBe('Not set up: no provider saved yet');
   });
 

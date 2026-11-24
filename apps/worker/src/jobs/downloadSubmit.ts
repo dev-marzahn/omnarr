@@ -5,7 +5,15 @@
 // client; then it submits under the client's lock. The job completes once the
 // client accepts the item; the reconciler reports the download from there.
 // A torrent waits behind the VPN gate while the VPN isn't up.
-import { type ClientKind, DownloadSubmitPayload, type IndexerFailure, type JobResult, type LeasedJob, type StorageSpace } from '@omnarr/contracts';
+import {
+  type ClientKind,
+  clientKindOf,
+  DownloadSubmitPayload,
+  type IndexerFailure,
+  type JobResult,
+  type LeasedJob,
+  type StorageSpace,
+} from '@omnarr/contracts';
 
 import type { DownloadClient, FetchedRelease } from '../clients/downloadClient.ts';
 import type { SitesBackend } from '../convex.ts';
@@ -30,9 +38,6 @@ export type DownloadSubmitDeps = {
 };
 
 const CLIENT_NAME = { nzbget: 'NZBGet', qbittorrent: 'qBittorrent' } as const;
-
-/** Usenet goes to NZBGet, torrents to qBittorrent. */
-export const clientKindOf = (source: DownloadSubmitPayload['source']): ClientKind => (source.kind === 'nzbUrl' ? 'nzbget' : 'qbittorrent');
 
 /**
  * In the VPN layout, qBittorrent loses gluetun's network when gluetun is recreated alone

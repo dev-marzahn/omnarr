@@ -1,10 +1,3 @@
-<!--
-  The Usenet card's backup servers: each one is a UsenetProviderForm with
-  its own "Test login" and Save, and a Remove. Each sits at its priority
-  (NZBGet's level 1–9) below the main server (level 0), so NZBGet asks them
-  only for articles the main server is missing. A new one gets its id here, so its test can name it
-  before the first save. Adding needs the main server saved first.
--->
 <script setup lang="ts">
 import { api } from '@omnarr/backend/api';
 import type { DownloadClientsDetail } from '@omnarr/contracts';
@@ -12,7 +5,7 @@ import type { DownloadClientsDetail } from '@omnarr/contracts';
 import { newId } from '~/lib/browser';
 
 const props = defineProps<{ usenet: DownloadClientsDetail['usenet']; workerConnected: boolean }>();
-const emit = defineEmits<{ saved: []; removed: [] }>();
+const emit = defineEmits<{ saved: []; removed: []; unsaved: [boolean] }>();
 
 const removeUsenetBackup = useMutation(api.api.downloadClients.removeUsenetBackup);
 
@@ -25,6 +18,18 @@ const entries = computed(() => [
   ...props.usenet.backupServers.map((server) => ({ id: server.id, server })),
   ...drafts.value.filter((id) => !props.usenet.backupServers.some((server) => server.id === id)).map((id) => ({ id, server: undefined })),
 ]);
+
+const unsavedIds = ref(new Set<string>());
+const anyUnsaved = computed(() => entries.value.some((entry) => unsavedIds.value.has(entry.id)));
+watch(anyUnsaved, (value) => emit('unsaved', value), { immediate: true });
+onBeforeUnmount(() => emit('unsaved', false));
+
+function markUnsaved(id: string, unsaved: boolean) {
+  const next = new Set(unsavedIds.value);
+  if (unsaved) next.add(id);
+  else next.delete(id);
+  unsavedIds.value = next;
+}
 
 function add() {
   drafts.value = [...drafts.value, newId()];
@@ -61,7 +66,13 @@ async function remove(id: string, saved: boolean) {
     <p v-if="!usenet.server" class="text-xs text-muted">Save the main server first.</p>
     <UAlert v-if="error" color="error" variant="subtle" icon="i-lucide-triangle-alert" :title="error" />
     <div v-for="entry in entries" :key="entry.id" class="rounded-md border border-default p-4">
-      <DownloadsUsenetProviderForm :usenet="usenet" :worker-connected="workerConnected" :backup="entry" @saved="emit('saved')">
+      <DownloadsUsenetProviderForm
+        :usenet="usenet"
+        :worker-connected="workerConnected"
+        :backup="entry"
+        @saved="emit('saved')"
+        @unsaved="markUnsaved(entry.id, $event)"
+      >
         <template #actions>
           <UButton
             color="error"

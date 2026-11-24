@@ -14,17 +14,7 @@ const { data, error } = useQuery(api.api.downloadClients.get, {});
 const { data: status } = useQuery(api.api.system.status, {});
 const workerConnected = computed(() => status.value?.worker?.connected === true && status.value.worker.accepted);
 
-function onSaved() {
-  toast.add({ title: 'Saved the Usenet provider', description: 'The worker applies it within 30 seconds.', icon: 'i-lucide-circle-check', color: 'success' });
-}
-
-function onBackupSaved() {
-  toast.add({ title: 'Saved the backup server', description: 'The worker applies it within 30 seconds.', icon: 'i-lucide-circle-check', color: 'success' });
-}
-
-function onBackupRemoved() {
-  toast.add({ title: 'Removed the backup server', description: 'The worker applies it within 30 seconds.', icon: 'i-lucide-circle-check', color: 'success' });
-}
+const usenetToasts = useUsenetToasts();
 
 function onTorrentsSaved() {
   toast.add({
@@ -57,9 +47,14 @@ function onVpnSaved(chosen: boolean) {
         <template v-else-if="data">
           <Section title="Usenet provider" description="Your news server's login. NZBGet downloads with it.">
             <UCard>
-              <DownloadsUsenetProviderForm :usenet="data.usenet" :worker-connected="workerConnected" @saved="onSaved" />
+              <DownloadsUsenetProviderForm :usenet="data.usenet" :worker-connected="workerConnected" @saved="usenetToasts.providerSaved" />
               <template #footer>
-                <DownloadsUsenetBackupServers :usenet="data.usenet" :worker-connected="workerConnected" @saved="onBackupSaved" @removed="onBackupRemoved" />
+                <DownloadsUsenetBackupServers
+                  :usenet="data.usenet"
+                  :worker-connected="workerConnected"
+                  @saved="usenetToasts.backupSaved"
+                  @removed="usenetToasts.backupRemoved"
+                />
               </template>
             </UCard>
           </Section>

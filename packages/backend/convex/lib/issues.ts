@@ -1,6 +1,6 @@
 // Raised failures. Only these appear under Issues; failures
 // that recover on their own stay on the timeline.
-import { type ClientItemRef, FAILURE_CLASS, FAILURE_SCOPE, FIX_ACTIONS, type FailureCode } from '@omnarr/contracts';
+import { FAILURE_CLASS, FAILURE_SCOPE, FIX_ACTIONS, type FailureCode, type ItemLeftInClient } from '@omnarr/contracts';
 
 import type { Doc, Id } from '../_generated/dataModel';
 import type { MutationCtx, QueryCtx } from '../_generated/server';
@@ -14,7 +14,7 @@ export type RaiseIssue = {
   /** For example needed vs. free bytes, or ffmpeg's exit code and last lines. */
   detail?: string;
   /** `orphanClientItem`: the client items it names; a raise again adds new ones. */
-  orphanItems?: ClientItemRef[];
+  orphanItems?: ItemLeftInClient[];
   /** `orphanAfterDelete`: the rows it names; a raise again adds new ones (`removeOrphans`). */
   orphanRows?: OrphanRows;
 };
@@ -27,10 +27,10 @@ const mergeRows = (known: OrphanRows = { jobIds: [], grabIds: [] }, added: Orpha
   grabIds: [...new Set([...known.grabIds, ...added.grabIds])],
 });
 
-const itemKey = (item: ClientItemRef) => `${item.clientKind}:${item.clientRef}`;
+const itemKey = (item: ItemLeftInClient) => `${item.clientKind}:${item.clientRef ?? `tag:${item.correlationTag}`}`;
 
 /** The items of both lists, each once. */
-const mergeItems = (known: ClientItemRef[] = [], added: ClientItemRef[] = []) => [
+const mergeItems = (known: ItemLeftInClient[] = [], added: ItemLeftInClient[] = []) => [
   ...new Map([...known, ...added].map((item) => [itemKey(item), item])).values(),
 ];
 

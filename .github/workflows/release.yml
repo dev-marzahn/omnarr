@@ -229,4 +229,5 @@ jobs:
           { echo; echo "ffmpeg in the worker image:"; echo '```'; docker run --rm --entrypoint cat "$image" /licenses/ffmpeg-configure.txt; echo '```'
             echo; echo "<details><summary>The worker image's Debian packages</summary>"; echo; echo '```'
             docker run --rm --entrypoint cat "$image" /licenses/packages.txt; echo '```'; echo "</details>"; } >> "$notes"
-          gh release create "v$VERSION" compose.yml compose.vpn.yml compose.vpn.merged.yml .env.example $prerelease --title "omnarr $VERSION" --notes-file "$RUNNER_TEMP/notes.md"
+          cp .env.example "$RUNNER_TEMP/env.example"
+          gh release create "v$VERSION" compose.yml compose.vpn.yml compose.vpn.merged.yml "$RUNNER_TEMP/env.example" $prerelease --title "omnarr $VERSION" --notes-file "$RUNNER_TEMP/notes.md"

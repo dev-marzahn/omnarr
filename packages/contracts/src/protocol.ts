@@ -255,6 +255,13 @@ export const ClientItemRef = z.object({
 });
 export type ClientItemRef = z.infer<typeof ClientItemRef>;
 
+export const ItemLeftInClient = ClientItemRef.extend({
+  clientRef: z.string().optional(),
+  downloadId: zid('downloads').optional(),
+  deleteData: z.boolean().optional(),
+});
+export type ItemLeftInClient = z.infer<typeof ItemLeftInClient>;
+
 /** `downloads.orphans`: the backend raises `orphanClientItem` for the items no Grab owns. */
 export const OrphansRequest = z.object({ sessionId: zid('workerSessions'), items: z.array(ClientItemRef) });
 export type OrphansRequest = z.infer<typeof OrphansRequest>;

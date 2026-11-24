@@ -123,17 +123,20 @@ async function tryNextBest(ctx: MutationCtx, issue: Doc<'issues'>): Promise<void
 async function removeClientItems(ctx: MutationCtx, issue: Doc<'issues'>): Promise<void> {
   for (const item of issue.orphanItems ?? []) {
     const torrent = item.clientKind === 'qbittorrent';
+    const foundByTag = item.clientRef === undefined;
     await enqueueJob(ctx, {
       payload: {
         class: 'maintenance',
         action: 'removeDownload',
+        ...(item.downloadId ? { downloadId: item.downloadId } : {}),
         clientKind: item.clientKind,
-        clientRef: item.clientRef,
-        deleteData: true,
+        ...(item.clientRef !== undefined ? { clientRef: item.clientRef } : {}),
+        releaseTitle: item.name,
+        deleteData: item.deleteData ?? true,
         // A torrent loses only this tag, and goes once no Grab's tag is left on it.
-        ...(torrent && item.correlationTag ? { correlationTag: item.correlationTag } : {}),
+        ...((torrent || foundByTag) && item.correlationTag ? { correlationTag: item.correlationTag } : {}),
       },
-      idempotencyKey: `removeDownload:${item.clientKind}:${item.clientRef}`,
+      idempotencyKey: `removeDownload:${issue._id}:${item.clientKind}:${item.clientRef ?? item.correlationTag}`,
     });
   }
   await ctx.db.patch(issue._id, { state: 'resolved', resolvedAt: Date.now() });

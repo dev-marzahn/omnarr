@@ -3,7 +3,18 @@ import type { DownloadClientsDetail, FailureCode, JellyfinStatus, ScanStatus, Sy
 import { describe, expect, test } from 'vite-plus/test';
 
 import { needsLoginTest } from '../lib/downloads';
-import { addressLines, advanceTarget, canContinue, checklist, refusalText, routeFor, shouldStartScan, usenetPrimary, usenetSaved } from '../lib/firstRun';
+import {
+  addressLines,
+  advanceTarget,
+  canContinue,
+  checklist,
+  refusalText,
+  routeFor,
+  shouldStartScan,
+  usenetSaved,
+  usenetStepCanContinue,
+  usenetStepLeadingButton,
+} from '../lib/firstRun';
 
 describe('routeFor', () => {
   test('no admin: the create-admin page only', () => {
@@ -186,43 +197,60 @@ describe('usenetSaved', () => {
     ({ enabled: false, hasPassword: false, configVersion: 0, config: 'pending', backupServers: [], ...overrides }) as DownloadClientsDetail['usenet'];
   const server = { host: 'news.provider.example', port: 563, ssl: true, username: 'u', connections: 20, level: 0 };
 
-  test('a provider saved in Settings lets the step continue without saving again', () => {
+  test('a main server saved, on the step or in Settings, shows the step its backup servers and Continue', () => {
     expect(usenetSaved(usenet({ enabled: true, server, hasPassword: true, configVersion: 1, config: 'applied' }))).toBe(true);
   });
 
-  test('no provider, or only a Test login (a row without a saved server), does not', () => {
+  test('no provider, or only a failed login test (a row without a saved server), shows neither backup servers nor Continue', () => {
     expect(usenetSaved(usenet({}))).toBe(false);
     expect(usenetSaved(usenet({ enabled: false, server }))).toBe(false);
   });
 });
 
-describe('usenetPrimary', () => {
+describe('usenetStepCanContinue: Continue once every server entered is saved', () => {
   const server = { host: 'news.provider.example', port: 563, ssl: true, username: 'u', connections: 20, level: 0 };
-  const saved = {
-    enabled: true,
-    server,
-    hasPassword: true,
-    configVersion: 1,
-    config: 'applied',
-    backupServers: [],
-  } as unknown as DownloadClientsDetail['usenet'];
+  const saved = { enabled: true, server, hasPassword: true, configVersion: 1, config: 'applied', backupServers: [] } as DownloadClientsDetail['usenet'];
+
+  test('the main server not saved yet: no Continue', () => {
+    expect(usenetStepCanContinue({ ...saved, enabled: false, server: undefined }, false)).toBe(false);
+  });
+
+  test('a backup draft or unsaved backup edit pending: no Continue', () => {
+    expect(usenetStepCanContinue(saved, true)).toBe(false);
+  });
+
+  test('the main server and every backup saved: Continue', () => {
+    expect(usenetStepCanContinue(saved, false)).toBe(true);
+  });
+});
+
+describe('usenetStepLeadingButton: Continue leads while every saved server is unchanged, else Save', () => {
+  const server = { host: 'news.provider.example', port: 563, ssl: true, username: 'u', connections: 20, level: 0 };
+  const backup = { id: 'backup-1', host: 'eu.provider.example', port: 563, ssl: true, username: 'u', connections: 10, priority: 1, hasPassword: true };
+  const saved = { enabled: true, server, hasPassword: true, configVersion: 1, config: 'applied', backupServers: [] } as DownloadClientsDetail['usenet'];
+  const withBackup = { ...saved, backupServers: [backup] };
   const form = { host: server.host, port: server.port, ssl: server.ssl, username: server.username, password: '', connections: server.connections };
-  // The form reports "unchanged" as the inverse of needsLoginTest.
-  const primary = (usenet: DownloadClientsDetail['usenet'], values: typeof form) => usenetPrimary(usenet, !needsLoginTest(values, usenet.server));
+  const leading = (usenet: DownloadClientsDetail['usenet'], mainServerForm: typeof form, backupsUnsaved = false) =>
+    usenetStepLeadingButton(usenet, { mainServerUnsaved: needsLoginTest(mainServerForm, usenet.server), backupsUnsaved });
 
-  test('a saved provider and no edit: continuing is the primary action', () => {
-    expect(primary(saved, form)).toBe('continue');
+  test('a saved provider and no edit: Continue leads, with or without saved backup servers', () => {
+    expect(leading(saved, form)).toBe('continue');
+    expect(leading(withBackup, form)).toBe('continue');
   });
 
-  test('after an edit, or a typed password, saving is primary again', () => {
-    expect(primary(saved, { ...form, host: 'eu.provider.example' })).toBe('save');
-    expect(primary(saved, { ...form, connections: 30 })).toBe('save');
-    expect(primary(saved, { ...form, password: 'secret' })).toBe('save');
+  test('an edit or a typed password on the main server: Save leads again, with backup servers too', () => {
+    expect(leading(saved, { ...form, host: 'other.provider.example' })).toBe('save');
+    expect(leading(withBackup, { ...form, connections: 30 })).toBe('save');
+    expect(leading(withBackup, { ...form, password: 'secret' })).toBe('save');
   });
 
-  test('no saved provider (or only a Test login): saving is primary', () => {
-    expect(primary({ ...saved, server: undefined }, form)).toBe('save');
-    expect(primary({ ...saved, enabled: false }, form)).toBe('save');
+  test('a backup server draft or edit pending: Continue is disabled, so it does not lead', () => {
+    expect(leading(withBackup, form, true)).toBe('save');
+  });
+
+  test('no saved provider (or only a Test login): Save leads', () => {
+    expect(leading({ ...saved, server: undefined }, form)).toBe('save');
+    expect(leading({ ...saved, enabled: false }, form)).toBe('save');
   });
 });
 

@@ -45,6 +45,8 @@ export const DownloadSource = z.discriminatedUnion('kind', [
 ]);
 export type DownloadSource = z.infer<typeof DownloadSource>;
 
+export const clientKindOf = (source: DownloadSource): ClientKind => (source.kind === 'nzbUrl' ? 'nzbget' : 'qbittorrent');
+
 export const DownloadSubmitPayload = z.object({
   class: z.literal('download.submit'),
   grabId: zid('grabs'),
@@ -164,7 +166,8 @@ export const MaintenancePayload = z.discriminatedUnion('action', [
     // Absent for an orphan client item, which has no `downloads` row (the `removeClientItem` fix).
     downloadId: zid('downloads').optional(),
     clientKind: ClientKind,
-    clientRef: z.string(),
+    clientRef: z.string().optional(),
+    releaseTitle: z.string().optional(),
     deleteData: z.boolean(),
     /** A Usenet download's folder, which the worker deletes with the item; accepted only under downloads/usenet/. */
     contentPath: z.string().optional(),

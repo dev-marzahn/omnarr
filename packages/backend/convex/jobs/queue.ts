@@ -340,7 +340,8 @@ async function cancelledGrab(ctx: MutationCtx, { job, code }: Failure): Promise<
   // With the job's class: a publish's `jellyfinSetupWait` is retryable, so a cancelled Grab's publish doesn't wait.
   if (retryPolicy(code, job.class) === 'terminal' || !job.grabId || !job.workflowId || !RUN_JOB_CLASSES.has(job.class)) return false;
   const grab = await ctx.db.get(job.grabId);
-  if (!grab?.cancelRequested) return false;
+  const cancelledOrDeleted = grab === null || grab.cancelRequested;
+  if (!cancelledOrDeleted) return false;
   await finishJob(ctx, job, 'cancelled');
   return true;
 }

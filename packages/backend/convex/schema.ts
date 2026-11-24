@@ -10,8 +10,8 @@ import {
   CandidateReason,
   CandidateTorrent,
   Capabilities,
-  ClientItemRef,
   FirstRunStep,
+  ItemLeftInClient,
   ResolveProblem,
   IndexerCaps,
   IndexerSite,
@@ -469,7 +469,7 @@ export default defineSchema({
     detail: v.optional(v.string()),
     resolvedAt: v.optional(v.number()),
     // `orphanClientItem`: the client items it names, which `removeClientItem` removes.
-    orphanItems: v.optional(v.array(zodToConvex(ClientItemRef))),
+    orphanItems: v.optional(v.array(zodToConvex(ItemLeftInClient))),
     // `orphanAfterDelete`: the deleted Works' rows that never ended, which `removeOrphans` deletes.
     orphanRows: v.optional(v.object({ jobIds: v.array(v.id('jobs')), grabIds: v.array(v.id('grabs')) })),
   })

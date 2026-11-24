@@ -2,7 +2,18 @@
 //. Each handler applies its transitions through
 // `transition()`; the job's event is sent after it, by queue.ts.
 import { sendEvent } from '@dev-marzahn/convex-workflow-migrations';
-import { compare, downloadEventName, type DownloadReport, type FailureCode, type JobEventValue, type JobResult, type TargetReading } from '@omnarr/contracts';
+import {
+  clientKindOf,
+  compare,
+  downloadEventName,
+  type DownloadReport,
+  type FailureCode,
+  type ItemLeftInClient,
+  type JobEventValue,
+  type JobPayload,
+  type JobResult,
+  type TargetReading,
+} from '@omnarr/contracts';
 
 import { components, internal } from '../_generated/api';
 import type { Doc, Id } from '../_generated/dataModel';
@@ -23,17 +34,14 @@ import { enqueueJob } from './queue';
 
 type ResultOf<C extends JobResult['class']> = Extract<JobResult, { class: C }>;
 
-/** The client accepted the release: the Grab is `downloading`, and the Download knows the client's reference. */
 export async function downloadSubmitted(ctx: MutationCtx, job: Doc<'jobs'>, result: ResultOf<'download.submit'>): Promise<void> {
-  if (!job.grabId) return;
-  const download = await ctx.db
-    .query('downloads')
-    .withIndex('by_grab', (q) => q.eq('grabId', job.grabId!))
-    .filter((q) => q.eq(q.field('jobId'), job._id))
-    .first();
+  if (job.payload?.class !== 'download.submit') return;
+  const submit = job.payload;
+  const download = await ctx.db.get(submit.downloadId);
   if (download) await ctx.db.patch(download._id, { clientRef: result.clientRef });
-  const grab = await ctx.db.get(job.grabId);
-  if (grab?.state === 'submitting')
+  const grab = await ctx.db.get(submit.grabId);
+  if (!grab || grab.state === 'cancelled') await removeWhatTheSubmitMayHaveAdded(ctx, submit, result.clientRef);
+  else if (grab.state === 'submitting')
     await transition(ctx, 'grab', grab._id, 'downloading', { kind: 'stageFinished', message: 'The download client accepted the release.' });
 }
 
@@ -490,6 +498,63 @@ async function indexerAnswered(ctx: MutationCtx, job: Doc<'jobs'>, result: Resul
   await ctx.db.patch(job._id, isTest ? { indexerTest: result.test } : { indexerOutcome: result.outcome });
 }
 
+type Removal = Extract<JobPayload, { class: 'maintenance'; action: 'removeDownload' }>;
+
+type SubmitPayload = Extract<JobPayload, { class: 'download.submit' }>;
+
+async function removeWhatTheSubmitMayHaveAdded(ctx: MutationCtx, submit: SubmitPayload, clientRef: string | undefined): Promise<void> {
+  const clientKind = clientKindOf(submit.source);
+  const grab = await ctx.db.get(submit.grabId);
+  await enqueueJob(ctx, {
+    payload: {
+      class: 'maintenance',
+      action: 'removeDownload',
+      downloadId: submit.downloadId,
+      clientKind,
+      ...(clientRef !== undefined ? { clientRef } : {}),
+      ...(submit.releaseTitle ? { releaseTitle: submit.releaseTitle } : {}),
+      deleteData: true,
+      ...(clientKind === 'qbittorrent' || clientRef === undefined ? { correlationTag: submit.correlationTag } : {}),
+    },
+    idempotencyKey: `removeDownload:${submit.downloadId}`,
+    ...(grab ? { grabId: grab._id } : {}),
+  });
+}
+
+async function removeWhatACancelledGrabsSubmitMayHaveAdded(ctx: MutationCtx, job: Doc<'jobs'>): Promise<void> {
+  const reachedAWorker = job.leaseEpoch > 0;
+  if (job.payload?.class !== 'download.submit' || !reachedAWorker) return;
+  const grab = await ctx.db.get(job.payload.grabId);
+  const cancelledOrDeleted = !grab || grab.cancelRequested;
+  if (cancelledOrDeleted) await removeWhatTheSubmitMayHaveAdded(ctx, job.payload, undefined);
+}
+
+async function workOfCandidate(ctx: MutationCtx, candidate: Doc<'candidates'> | null): Promise<Doc<'works'> | null> {
+  const attempt = candidate && (await ctx.db.get(candidate.searchAttemptId));
+  return attempt && (await ctx.db.get(attempt.workId));
+}
+
+async function raiseItemLeftInClient(ctx: MutationCtx, removal: Removal, why: string | undefined): Promise<void> {
+  const download = removal.downloadId ? await ctx.db.get(removal.downloadId) : null;
+  const grab = download && (await ctx.db.get(download.grabId));
+  const candidate = grab && (await ctx.db.get(grab.candidateId));
+  const keptForADeletedWorksSweep = grab !== null && !(await workOfCandidate(ctx, candidate));
+  if (keptForADeletedWorksSweep) return;
+  const torrent = removal.clientKind === 'qbittorrent';
+  const foundByTag = removal.clientRef === undefined;
+  const item: ItemLeftInClient = {
+    clientKind: removal.clientKind,
+    ...(removal.clientRef !== undefined ? { clientRef: removal.clientRef } : {}),
+    ...((torrent || foundByTag) && removal.correlationTag ? { correlationTag: removal.correlationTag } : {}),
+    name: removal.releaseTitle ?? candidate?.title ?? removal.clientRef ?? `tagged ${removal.correlationTag}`,
+    ...(removal.downloadId ? { downloadId: removal.downloadId } : {}),
+    deleteData: removal.deleteData,
+  };
+  const failure = why ? `the removal failed: ${why}` : 'the removal failed';
+  const which = removal.clientRef ?? `tagged ${removal.correlationTag}`;
+  await raiseIssue(ctx, { code: 'orphanClientItem', detail: `${item.clientKind} ${which}: ${item.name}: ${failure}`.slice(0, 2000), orphanItems: [item] });
+}
+
 /** A job that ended without success: its entity fails or is cancelled (`queue.fail`). */
 export async function applyEnd(
   ctx: MutationCtx,
@@ -513,6 +578,10 @@ export async function applyEnd(
   } else if (payload?.class === 'maintenance' && payload.action === 'scanLibrary') {
     const run = await ctx.db.get(payload.scanRunId);
     if (run?.state === 'reading') await ctx.db.patch(run._id, { state: outcome, finishedAt: Date.now() });
+  } else if (payload?.class === 'download.submit') {
+    await removeWhatACancelledGrabsSubmitMayHaveAdded(ctx, job);
+  } else if (payload?.class === 'maintenance' && payload.action === 'removeDownload' && outcome === 'failed') {
+    await raiseItemLeftInClient(ctx, payload, detail);
   } else if (payload?.class === 'maintenance' && payload.action === 'testUsenetServer') {
     // NZBGet unreachable on every attempt, say: the form shows the test failed.
     await recordProviderTest(ctx, job._id, 'failed');
