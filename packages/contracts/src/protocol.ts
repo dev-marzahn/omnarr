@@ -12,7 +12,7 @@ import { ActivePlay, ProbeSummary } from './playback.ts';
 import { SeedGoal } from './seedGoal.ts';
 
 /** Rises on any breaking change to this package. */
-export const PROTOCOL_VERSION = 2;
+export const PROTOCOL_VERSION = 3;
 
 /** The arguments every worker call carries. */
 export const WorkerCall = z.object({
@@ -245,6 +245,13 @@ export const ClientItemRef = z.object({
   name: z.string(),
 });
 export type ClientItemRef = z.infer<typeof ClientItemRef>;
+
+export const ItemLeftInClient = ClientItemRef.extend({
+  clientRef: z.string().optional(),
+  downloadId: zid('downloads').optional(),
+  deleteData: z.boolean().optional(),
+});
+export type ItemLeftInClient = z.infer<typeof ItemLeftInClient>;
 
 /** `downloads.orphans`: the backend raises `orphanClientItem` for the items no Grab owns. */
 export const OrphansRequest = z.object({ sessionId: zid('workerSessions'), items: z.array(ClientItemRef) });

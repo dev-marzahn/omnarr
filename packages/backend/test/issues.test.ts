@@ -246,7 +246,14 @@ describe('issues.act: the fix actions', () => {
     await act(issue._id, 'removeClientItem');
     const removal = (await h.all('jobs')).find((job) => job.payload?.class === 'maintenance' && job.payload.action === 'removeDownload');
     // A tag only matters to a torrent shared between Grabs.
-    expect(removal!.payload).toEqual({ class: 'maintenance', action: 'removeDownload', clientKind: 'nzbget', clientRef: '41', deleteData: true });
+    expect(removal!.payload).toEqual({
+      class: 'maintenance',
+      action: 'removeDownload',
+      clientKind: 'nzbget',
+      clientRef: '41',
+      releaseTitle: 'Stray.Show.S01E01',
+      deleteData: true,
+    });
     expect((await h.get(issue._id))!.state).toBe('resolved');
   });
 });

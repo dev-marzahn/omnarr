@@ -77,6 +77,29 @@ describe('removeDownload', () => {
     expect(client.items).toEqual([]);
   });
 
+  test('a removal that names only a tag finds the item by it and removes it', async () => {
+    client.add('grab0');
+    const clientRef = client.add('grab1');
+    expect(await run({ class: 'maintenance', action: 'removeDownload', clientKind: 'nzbget', correlationTag: 'grab1', deleteData: true })).toEqual({
+      class: 'maintenance',
+      action: 'removeDownload',
+      removed: true,
+    });
+    expect(client.items.map((item) => item.clientRef)).not.toContain(clientRef);
+    expect(client.items).toHaveLength(1);
+  });
+
+  test('a removal by tag with no item under it removes nothing', async () => {
+    client.add('grab0');
+    expect(await run({ class: 'maintenance', action: 'removeDownload', clientKind: 'nzbget', correlationTag: 'grab1', deleteData: true })).toEqual({
+      class: 'maintenance',
+      action: 'removeDownload',
+      removed: false,
+    });
+    expect(client.calls).not.toContain('remove');
+    expect(client.items).toHaveLength(1);
+  });
+
   test('waits for an apply that holds the client lock', async () => {
     const clientRef = client.add('grab1');
     const events: string[] = [];
