@@ -17,7 +17,7 @@
 
 ## Configuration
 
-Every setting is optional. Copy `.env.example` to `.env` and uncomment what you change, then run `docker compose up -d`. An empty value counts as unset.
+Every setting is optional. Save the release's `env.example` in the install folder as `.env` and uncomment what you change, then run `docker compose up -d`. An empty value counts as unset.
 
 | Variable | Default | What it does |
 | --- | --- | --- |
