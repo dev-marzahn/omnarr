@@ -70,6 +70,12 @@ test("issueExplanation is the Issue's detail, else a line on what to do", () => 
   expect(issueExplanation(row({ failureCode: 'workerOffline', scope: 'system', class: 'system', fixActions: [] }))).toMatch(/Restart the worker/);
 });
 
+test('the vpnDown help needs no command: a saved VPN change reaches gluetun on its own', () => {
+  const help = issueExplanation(row({ failureCode: 'vpnDown', scope: 'system', class: 'system', fixActions: [] }));
+  expect(help).toMatch(/Settings › Downloads/);
+  expect(help).not.toMatch(/docker compose/);
+});
+
 describe('issueActions: the first fix is the button, the rest are in "More fixes"', () => {
   test('on the Issues page, "Open timeline" goes before Dismiss', () => {
     expect(issueActions(row())).toEqual({ primary: 'tryNextBest', more: ['searchAndPick', 'retryRelease', 'blocklistRemove', 'openTimeline', 'dismiss'] });

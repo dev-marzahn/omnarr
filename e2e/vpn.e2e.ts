@@ -2,31 +2,18 @@
 // server (linuxserver/wireguard), with qBittorrent in gluetun's network
 // namespace and the web seed reachable only through the tunnel
 // (compose.wireguard.test.yml).
-//
-//   1. the VPN chosen in the direct layout: a WireGuard config saved through saveVpn;
-//      the worker writes vpn/, binds qBittorrent to tun0, reports notActive;
-//      vpnDown opens with the .env step, and torrent submits wait (vpnWait);
-//   2. the user's step (compose.vpn.yml, `docker compose up -d`): the worker
-//      reaches qBittorrent at gluetun:8080 and the control API with the
-//      generated key, a request without it is refused; up resolves vpnDown and
-//      wakes the waiting submits;
-//   3. S01E01 downloads through the tunnel;
-//   4. the WireGuard server stops: vpnDown opens, the trickling S01E04 moves
-//      no byte, and its stall clock stays paused past the stall time;
-//   5. the server starts again: vpnDown resolves and S01E04 moves again;
-//   6. gluetun is recreated by a changed VPN file, and qBittorrent keeps a
-//      network;
-//   7. OpenVPN: an OpenVPN file against the test OpenVPN server, with
-//      `tls-exit` as gluetun's built-in providers have it; the server is
-//      blocked both ways and the VPN goes down, never up in between, then
-//      comes back.
+import { existsSync, readdirSync } from 'node:fs';
+import { join } from 'node:path';
+
 import { makeFunctionReference } from 'convex/server';
 import { afterAll, beforeAll, describe, expect, test } from 'vite-plus/test';
 
 import { vpnCatalogue } from './fakes/torrent/catalogue.ts';
+import { publishedRelease } from './releases.ts';
 import {
   blockOpenvpnServer,
   compose,
+  deployLikeCoolify,
   down,
   exec,
   FAR_WEBSEED,
@@ -40,6 +27,7 @@ import {
   stopWireguardBeforeHealthCheck,
   switchToVpnLayout,
   up,
+  useRelease,
   VPN_NET,
   vpnFiles,
   waitFor,
@@ -70,6 +58,7 @@ const STALL_MS = 180_000;
 const STALL_MARGIN_MS = 15_000;
 const catalogue = vpnCatalogue(`${FAR_WEBSEED}:4130`);
 const hashOf = (guid: string) => catalogue.find((entry) => entry.guid === guid)!.torrent.infoHash;
+const VPN_STACK = { layout: 'wireguard', torrents: { seedGoal: { seedTimeMs: 120 * MINUTE } }, torrentStallMs: STALL_MS } as const;
 
 let d: Deployment;
 let conf: string;
@@ -79,9 +68,67 @@ const vpnState = async (): Promise<string | undefined> => (await qbittorrentRow(
 const vpnIssues = () => rows<Row>(d.env, 'issues').filter((issue) => issue.failureCode === 'vpnDown');
 const torrent = (guid: string) => qbittorrentApi<TorrentInfo[]>('torrents/info').find((info) => info.hash === hashOf(guid));
 const containerId = (service: string) => compose(['ps', '-q', service], ['test', 'worker']).trim();
+const gluetunProcessEnv = () =>
+  exec('gluetun', ['sh', '-c', `pid=$(pgrep -P 1 -f '^/gluetun-entrypoint') && tr "\\0" "\\n" < /proc/$pid/environ || true`], ['test', 'worker']);
+const gluetunRunning = () => gluetunProcessEnv() !== '';
+const OUTSIDE_THE_TUNNEL = { host: '1.1.1.1', port: 80 };
+const succeeds = (run: () => unknown) => {
+  try {
+    run();
+    return true;
+  } catch {
+    return false;
+  }
+};
+const qbittorrentNamespaceReachesOutside = () =>
+  succeeds(() => exec('gluetun', ['timeout', '5', 'nc', '-z', '-w', '3', OUTSIDE_THE_TUNNEL.host, String(OUTSIDE_THE_TUNNEL.port)], ['test', 'worker']));
+const workerReachesOutside = () =>
+  succeeds(() =>
+    exec(
+      'worker',
+      [
+        'node',
+        '-e',
+        `require('node:net').connect(${OUTSIDE_THE_TUNNEL.port}, '${OUTSIDE_THE_TUNNEL.host}').on('connect', () => process.exit(0)).on('error', () => process.exit(1)); setTimeout(() => process.exit(1), 5000);`,
+      ],
+      ['test', 'worker'],
+    ),
+  );
+const filesHash = (env: string) => /^OMNARR_VPN_FILES_HASH=(\w+)$/m.exec(env)?.[1];
+const qbittorrentConnected = async () =>
+  waitFor('qBittorrent connected through tun0', async () =>
+    qbittorrentApi<{ connection_status: string }>('transfer/info').connection_status !== 'disconnected' ? true : undefined,
+  );
+const savedVpnReachesGluetun = async (input: object) => {
+  const env = await savedVpnWritten(input);
+  await waitFor('gluetun restarted with the new settings', async () => (filesHash(gluetunProcessEnv()) === filesHash(env) ? true : undefined), 60_000, 1_000);
+};
+const savedVpnWritten = async (input: object) => {
+  const envBefore = exec('worker', ['cat', '/vpn/gluetun.env']);
+  await mutation('api/downloadClients:saveVpn', { input });
+  return waitFor(
+    'gluetun.env rewritten',
+    async () => {
+      const current = exec('worker', ['cat', '/vpn/gluetun.env']);
+      return current !== envBefore ? current : undefined;
+    },
+    120_000,
+    500,
+  );
+};
+const vpnUp = (when: string, { exitIp, timeoutMs = 300_000 }: { exitIp?: string; timeoutMs?: number } = {}) =>
+  waitFor(
+    `the VPN up ${when}`,
+    async () => {
+      const row = await qbittorrentRow();
+      return row?.vpn?.state === 'up' && (exitIp === undefined || row.vpn.publicIp === exitIp) ? row : undefined;
+    },
+    timeoutMs,
+    1_000,
+  );
 
 beforeAll(async () => {
-  d = await up({ layout: 'wireguard', torrents: { seedGoal: { seedTimeMs: 120 * MINUTE } }, torrentStallMs: STALL_MS });
+  d = await up(VPN_STACK);
   startWorker('worker');
 }, 900_000);
 afterAll(() => {
@@ -143,7 +190,7 @@ describe('the VPN layout', () => {
     const qbittorrentBefore = containerId('qbittorrent');
     switchToVpnLayout();
     expect(containerId('qbittorrent')).not.toBe(qbittorrentBefore);
-    await waitFor('the VPN up', async () => ((await vpnState()) === 'up' ? true : undefined), 300_000, 1_000);
+    await vpnUp('after the switch');
 
     // The worker reaches qBittorrent through gluetun's namespace, configured in its new session.
     const row = await waitFor('qBittorrent applied through gluetun', async () => {
@@ -200,40 +247,53 @@ describe('the VPN layout', () => {
     const startedAt = Date.now();
     await waitFor('S01E04 moving again', async () => (torrent('hl-t-s01e04-slow')!.downloaded > before ? true : undefined), 300_000, 1_000);
     process.stderr.write(`MEASURED: WireGuard recovery: S01E04 moved again ${((Date.now() - startedAt) / 1000).toFixed(0)} s after the server started\n`);
-    await waitFor('the VPN up again', async () => ((await vpnState()) === 'up' ? true : undefined), 420_000, 1_000);
+    await vpnUp('again', { timeoutMs: 420_000 });
     expect(vpnIssues().every((issue) => issue.state === 'resolved')).toBe(true);
   });
 
-  test('a changed VPN file recreates gluetun on `docker compose up -d`, and qBittorrent keeps a network', async () => {
+  test('a changed VPN file restarts gluetun in its container without compose, and qBittorrent keeps a network', async () => {
     const gluetunBefore = containerId('gluetun');
-    const envBefore = exec('worker', ['cat', '/vpn/gluetun.env']);
-    await mutation('api/downloadClients:saveVpn', { input: { kind: 'wireguardFile', wireguardConf: `${conf}\n# rotated\n` } });
-    await waitFor('gluetun.env rewritten', async () => (exec('worker', ['cat', '/vpn/gluetun.env']) !== envBefore ? true : undefined), 120_000, 500);
-    compose(['up', '-d', '--wait'], ['test', 'worker']);
-    expect(containerId('gluetun')).not.toBe(gluetunBefore);
-    await waitFor('the VPN up after the recreate', async () => ((await vpnState()) === 'up' ? true : undefined), 300_000, 1_000);
+    await savedVpnReachesGluetun({ kind: 'wireguardFile', wireguardConf: `${conf}\n# rotated\n` });
+    expect(containerId('gluetun')).toBe(gluetunBefore);
+    await vpnUp('after the restart');
     expect(qbittorrentApi<string>('app/version')).toMatch(/^v?5\.3\.0/);
     expect(torrent('hl-t-s01e01')).toBeDefined();
+    await qbittorrentConnected();
+  });
+
+  test('a setting gluetun refuses stops only gluetun, which retries after a minute with no traffic outside the VPN; the fixed setting brings qBittorrent back without compose', async () => {
+    const containers = { gluetun: containerId('gluetun'), qbittorrent: containerId('qbittorrent') };
+    const refusals = () => compose(['logs', '--no-color', 'gluetun'], ['test', 'worker']).split('the country specified is not valid').length - 1;
+    const refusedBefore = refusals();
+    await savedVpnWritten({ kind: 'protonvpn', wireguardPrivateKey: 'wOEI9rqqbDwnN8/Bpp22sVz48T71vJ4fYmFWujulwUU=', serverCountries: ['Atlantis'] });
+    await waitFor('gluetun stopped on the country', async () => (gluetunRunning() ? undefined : true), 60_000, 1_000);
+    const stoppedAt = Date.now();
+    await waitFor('the outage seen', async () => ((await vpnState()) !== 'up' ? true : undefined), 120_000, 1_000);
+    expect(workerReachesOutside()).toBe(true);
+    expect(gluetunRunning()).toBe(false);
+    expect(qbittorrentNamespaceReachesOutside()).toBe(false);
+
+    await waitFor('gluetun tried again', async () => (refusals() >= refusedBefore + 2 ? true : undefined), 120_000, 1_000);
+    expect(Date.now() - stoppedAt).toBeGreaterThanOrEqual(50_000);
+    expect(containerId('gluetun')).toBe(containers.gluetun);
+
+    await savedVpnReachesGluetun({ kind: 'wireguardFile', wireguardConf: conf });
+    expect(qbittorrentNamespaceReachesOutside()).toBe(false);
+    await vpnUp('after the fix');
+    expect(qbittorrentApi<string>('app/version')).toMatch(/^v?5\.3\.0/);
+    await qbittorrentConnected();
+    expect({ gluetun: containerId('gluetun'), qbittorrent: containerId('qbittorrent') }).toEqual(containers);
   });
 });
 
 describe('OpenVPN', () => {
-  test('an OpenVPN file: `docker compose up -d` recreates gluetun, and the VPN is up through the OpenVPN server', async () => {
-    const envBefore = exec('worker', ['cat', '/vpn/gluetun.env']);
-    await mutation('api/downloadClients:saveVpn', { input: { kind: 'openvpnFile', openvpnConf: openvpnClientConf() } });
-    await waitFor('gluetun.env rewritten', async () => (exec('worker', ['cat', '/vpn/gluetun.env']) !== envBefore ? true : undefined), 120_000, 500);
+  test('an OpenVPN file reaches gluetun without compose, and the VPN is up through the OpenVPN server', async () => {
+    const gluetunBefore = containerId('gluetun');
+    await savedVpnReachesGluetun({ kind: 'openvpnFile', openvpnConf: openvpnClientConf() });
     expect(vpnFiles()).toEqual(['custom.ovpn', 'gluetun.env']);
-    compose(['up', '-d', '--wait'], ['test', 'worker']);
+    expect(containerId('gluetun')).toBe(gluetunBefore);
     // The exit IP is what the web seed saw: the OpenVPN server's address on its network, not the WireGuard server's.
-    const row = await waitFor(
-      'the VPN up through OpenVPN',
-      async () => {
-        const current = await qbittorrentRow();
-        return current?.vpn?.state === 'up' && current.vpn.publicIp === `${VPN_NET.far}.201` ? current : undefined;
-      },
-      420_000,
-      1_000,
-    );
+    const row = await vpnUp('through OpenVPN', { exitIp: `${VPN_NET.far}.201`, timeoutMs: 420_000 });
     expect(row.vpn).toMatchObject({ layoutWithoutChoice: false, port: { kind: 'none' } });
     expect(qbittorrentApi<string>('app/version')).toMatch(/^v?5\.3\.0/);
   });
@@ -264,8 +324,64 @@ describe('OpenVPN', () => {
 
   test('recovery: the server reachable again, the VPN up after the stable window, and vpnDown resolves', async () => {
     blockOpenvpnServer(false);
-    await waitFor('the VPN up again', async () => ((await vpnState()) === 'up' ? true : undefined), 420_000, 1_000);
+    await vpnUp('again', { timeoutMs: 420_000 });
     expect(vpnIssues().every((issue) => issue.state === 'resolved')).toBe(true);
     expect(qbittorrentApi<string>('app/version')).toMatch(/^v?5\.3\.0/);
+  });
+});
+
+describe("Coolify's layout: compose runs from another folder than the install's, with the vpn/ bind absolute", () => {
+  test('a redeploy: gluetun starts with the settings the app wrote, which compose itself cannot find', async () => {
+    const deployDir = deployLikeCoolify();
+    expect(existsSync(join(deployDir, 'vpn/gluetun.env'))).toBe(false);
+    expect(readdirSync(deployDir)).toEqual([]);
+    expect(gluetunProcessEnv()).toContain('OPENVPN_CUSTOM_CONFIG=/vpn/custom.ovpn\n');
+    await vpnUp('through OpenVPN', { exitIp: `${VPN_NET.far}.201`, timeoutMs: 420_000 });
+    expect(qbittorrentApi<string>('app/version')).toMatch(/^v?5\.3\.0/);
+  });
+
+  test('a VPN change in Settings reaches gluetun without a redeploy', async () => {
+    const gluetunBefore = containerId('gluetun');
+    await savedVpnReachesGluetun({ kind: 'wireguardFile', wireguardConf: conf });
+    expect(containerId('gluetun')).toBe(gluetunBefore);
+    await vpnUp('through WireGuard', { exitIp: `${VPN_NET.far}.200`, timeoutMs: 420_000 });
+    await qbittorrentConnected();
+  });
+});
+
+describe('an install upgraded from 100.0.2, whose worker wrote vpn/ and whose compose read gluetun.env on the host', () => {
+  beforeAll(async () => {
+    await down();
+    useRelease(await publishedRelease('100.0.2'));
+    d = await up(VPN_STACK);
+    startWorker('worker');
+    conf = await wireguardPeerConf();
+  }, 900_000);
+
+  test('on 100.0.2: a WireGuard file saved, the VPN layout switched to, and the VPN up', async () => {
+    await waitFor('qBittorrent applied', async () => ((await qbittorrentRow())?.config === 'applied' ? true : undefined));
+    await mutation('api/downloadClients:saveVpn', { input: { kind: 'wireguardFile', wireguardConf: conf } });
+    await waitFor('vpn/ written by the 100.0.2 worker', async () => (vpnFiles().includes('gluetun.env') ? true : undefined), 120_000, 500);
+    expect(exec('worker', ['stat', '-c', '%a', '/vpn/gluetun.env']).trim()).toBe('644');
+    switchToVpnLayout();
+    await vpnUp('on 100.0.2');
+  });
+
+  test("`docker compose up -d` with this release's files: gluetun loads vpn/ itself, the worker makes gluetun.env 0600, and qBittorrent keeps a network", async () => {
+    const gluetunBefore = containerId('gluetun');
+    const settings = exec('worker', ['cat', '/vpn/gluetun.env']);
+    useRelease();
+    switchToVpnLayout();
+    expect(containerId('gluetun')).not.toBe(gluetunBefore);
+    expect(filesHash(gluetunProcessEnv())).toBe(filesHash(settings));
+    await vpnUp('after the upgrade');
+    await waitFor(
+      'gluetun.env 0600',
+      async () => (exec('worker', ['stat', '-c', '%a', '/vpn/gluetun.env']).trim() === '600' ? true : undefined),
+      120_000,
+      1_000,
+    );
+    expect(qbittorrentApi<string>('app/version')).toMatch(/^v?5\.3\.0/);
+    await qbittorrentConnected();
   });
 });

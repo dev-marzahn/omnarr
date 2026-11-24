@@ -379,20 +379,11 @@ export const SWITCH_BACK_STEP = `Remove ${COMPOSE_LINE} from \`.env\`, then run 
 const inVpnLayout = (runtime: Pick<VpnRuntime, 'state' | 'layoutWithoutChoice'> | undefined): boolean =>
   runtime !== undefined && (runtime.layoutWithoutChoice || runtime.state === 'connecting' || runtime.state === 'up' || runtime.state === 'down');
 
-/**
- * The note after a VPN save, from the choice saved and the runtime
- * seen when it was saved. Gluetun reads its files only when it starts, so a
- * change in the VPN layout needs `docker compose up -d`; a change of layout
- * needs the `.env` step first. No VPN in the direct layout needs nothing: the
- * worker applies it through qBittorrent's API. Before the worker has
- * reported, the layout is taken to be the default, direct one.
- */
 export function vpnApplyNote(chosen: boolean, runtime: Pick<VpnRuntime, 'state' | 'layoutWithoutChoice'> | undefined): Note | undefined {
-  const vpnLayout = inVpnLayout(runtime);
-  if (chosen && !vpnLayout) return { title: 'Switch to the VPN layout', description: `${SWITCH_TO_VPN_STEP} Until then, torrents wait.` };
-  if (chosen) return { title: 'Apply with `docker compose up -d`', description: 'The VPN container reads its settings only when it starts.' };
-  if (vpnLayout) return { title: 'Switch back to the direct layout', description: `${SWITCH_BACK_STEP} Until then, torrents still go through the VPN.` };
-  return undefined;
+  if (chosen === inVpnLayout(runtime)) return undefined;
+  return chosen
+    ? { title: 'Switch to the VPN layout', description: `${SWITCH_TO_VPN_STEP} Until then, torrents wait.` }
+    : { title: 'Switch back to the direct layout', description: `${SWITCH_BACK_STEP} Until then, torrents still go through the VPN.` };
 }
 
 /** A text split at its backticks, for showing the commands as code. */

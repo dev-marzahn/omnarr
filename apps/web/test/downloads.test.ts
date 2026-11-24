@@ -522,9 +522,7 @@ test('the VPN kinds and their labels', () => {
   ]);
 });
 
-// gluetun reads its files only when it starts; the layout switch is one .env line.
 describe('vpnApplyNote', () => {
-  const apply = { title: 'Apply with `docker compose up -d`', description: 'The VPN container reads its settings only when it starts.' };
   const switchOn = {
     title: 'Switch to the VPN layout',
     description: 'Add `COMPOSE_FILE=compose.yml:compose.vpn.yml` to `.env`, then run `docker compose up -d`. Until then, torrents wait.',
@@ -545,12 +543,12 @@ describe('vpnApplyNote', () => {
     expect(vpnApplyNote(true, undefined)).toEqual(switchOn);
   });
 
-  test.each(['connecting', 'up', 'down'] as const)('a VPN changed while the VPN layout runs (%s): apply with the command', (state) => {
-    expect(vpnApplyNote(true, runtime(state))).toEqual(apply);
+  test.each(['connecting', 'up', 'down'] as const)('a VPN changed while the VPN layout runs (%s): no step, gluetun restarts with it', (state) => {
+    expect(vpnApplyNote(true, runtime(state))).toBeUndefined();
   });
 
-  test('a VPN chosen again in the VPN layout, after No VPN: apply with the command', () => {
-    expect(vpnApplyNote(true, runtime('up', true))).toEqual(apply);
+  test('a VPN chosen again in the VPN layout, after No VPN: no step', () => {
+    expect(vpnApplyNote(true, runtime('up', true))).toBeUndefined();
   });
 
   test('No VPN while the VPN layout still runs: the step to switch back', () => {

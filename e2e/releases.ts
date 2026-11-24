@@ -42,19 +42,23 @@ const buildAll = (context: string, version: string, suffix: string): ProjectImag
   web: build(context, 'web', version, `omnarr-web:${PROJECT}-${suffix}`),
 });
 
+async function releaseFile(version: string, name: string): Promise<string> {
+  const response = await fetch(`https://github.com/dev-marzahn/omnarr/releases/download/v${version}/${name}`);
+  if (!response.ok) throw new Error(`release v${version} has no ${name} (HTTP ${response.status})`);
+  return response.text();
+}
+
+export async function publishedRelease(version: string): Promise<Release> {
+  const dir = mkdtempSync(join(tmpdir(), `omnarr-release-${version}-`));
+  for (const file of ['compose.yml', 'compose.vpn.yml']) writeFileSync(join(dir, file), await releaseFile(version, file));
+  const pinned = (name: string) => readFileSync(join(dir, 'compose.yml'), 'utf8').match(new RegExp(`image:\\s*(\\S*/${name}:\\S+)`))![1]!;
+  return { version, dir, images: { backend: pinned('omnarr-backend'), worker: pinned('omnarr-worker'), web: pinned('omnarr-web') } };
+}
+
 /** The release to upgrade from. */
 export async function fromRelease(): Promise<Release> {
   const published = process.env.E2E_FROM_VERSION;
-  if (published) {
-    const dir = mkdtempSync(join(tmpdir(), `omnarr-release-${published}-`));
-    for (const file of ['compose.yml', 'compose.vpn.yml']) {
-      const response = await fetch(`https://github.com/dev-marzahn/omnarr/releases/download/v${published}/${file}`);
-      if (!response.ok) throw new Error(`release v${published} has no ${file} (HTTP ${response.status})`);
-      writeFileSync(join(dir, file), await response.text());
-    }
-    const pinned = (name: string) => readFileSync(join(dir, 'compose.yml'), 'utf8').match(new RegExp(`image:\\s*(\\S*/${name}:\\S+)`))![1]!;
-    return { version: published, dir, images: { backend: pinned('omnarr-backend'), worker: pinned('omnarr-worker'), web: pinned('omnarr-web') } };
-  }
+  if (published) return publishedRelease(published);
   const version = process.env.E2E_FROM_LOCAL_VERSION || '0.1.0-p1';
   const dir = archive(process.env.E2E_FROM_COMMIT || '62f05fc');
   return { version, dir, images: buildAll(dir, version, version) };

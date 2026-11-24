@@ -1,0 +1,7 @@
+services:
+  gluetun:
+    volumes:
+      - ${E2E_INSTALL_DIR:?}/vpn:/vpn:ro
+  worker:
+    volumes:
+      - ${E2E_INSTALL_DIR:?}/vpn:/vpn

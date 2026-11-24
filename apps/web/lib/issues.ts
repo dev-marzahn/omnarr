@@ -48,7 +48,7 @@ const HELP: Partial<Record<FailureCode, string>> = {
   workerOffline: 'Restart the worker container: docker compose up -d worker.',
   protocolMismatch: 'Run the worker of the same omnarr release as the backend, then restart it.',
   storageUnavailable: 'Put staging, originals and the libraries on the /data volume, and check their owner.',
-  vpnDown: 'Check the VPN settings under Settings › Downloads, then run docker compose up -d.',
+  vpnDown: 'Check the VPN settings under Settings › Downloads. A saved change reaches the VPN container on its own.',
 };
 export const issueExplanation = (row: IssueRow): string | undefined => row.detail ?? HELP[row.failureCode];
 
