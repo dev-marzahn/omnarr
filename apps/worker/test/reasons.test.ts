@@ -5,17 +5,33 @@ import { describe, expect, test } from 'vite-plus/test';
 import { playMethod, transcodeReasons } from '../src/jellyfin/reasons.ts';
 
 describe('playMethod', () => {
+  // Without a transcode job, what the client reported; Jellyfin's dashboard
+  // shows a DirectStream with no job as a direct play too.
   test.each([
     ['DirectPlay', 'directPlay'],
-    ['DirectStream', 'directStream'],
+    ['DirectStream', 'directPlay'],
     ['Transcode', 'transcode'],
-  ])('%s is %s', (name, method) => {
-    expect(playMethod(name)).toBe(method);
+  ])('%s with no TranscodingInfo is %s', (name, method) => {
+    expect(playMethod(name, undefined)).toBe(method);
   });
 
-  test('an unknown or missing name is no method', () => {
-    expect(playMethod('Teleport')).toBeUndefined();
-    expect(playMethod(undefined)).toBeUndefined();
+  // With one, what the server runs, whatever the client reported.
+  test.each([
+    ['video and audio copied', { IsVideoDirect: true, IsAudioDirect: true, VideoCodec: 'h264' }, 'remux'],
+    ['audio copied, no video stream', { IsVideoDirect: false, IsAudioDirect: true }, 'remux'],
+    ['video copied, audio converted', { IsVideoDirect: true, IsAudioDirect: false, VideoCodec: 'h264' }, 'transcode'],
+    ['video converted', { IsVideoDirect: false, IsAudioDirect: true, VideoCodec: 'h264' }, 'transcode'],
+  ])('%s is %s', (_, info, method) => {
+    for (const name of ['DirectPlay', 'DirectStream', 'Transcode']) expect(playMethod(name, info)).toBe(method);
+  });
+
+  test("a client that reports DirectPlay while Jellyfin stream-copies to HLS is a remux (the Android app's fallback)", () => {
+    expect(playMethod('DirectPlay', { IsVideoDirect: true, IsAudioDirect: true, VideoCodec: 'h264' })).toBe('remux');
+  });
+
+  test('an unknown or missing name with no TranscodingInfo is no method', () => {
+    expect(playMethod('Teleport', undefined)).toBeUndefined();
+    expect(playMethod(undefined, undefined)).toBeUndefined();
   });
 });
 
@@ -36,20 +52,19 @@ describe('transcodeReasons', () => {
     ['ContainerBitrateExceedsLimit', 'bitrate'],
     ['VideoBitrateNotSupported', 'bitrate'],
     ['AudioBitrateNotSupported', 'bitrate'],
-    // 12.4's names with no platform term of their own.
-    ['AudioIsExternal', 'other'],
-    ['SecondaryAudioNotSupported', 'other'],
-    ['RefFramesNotSupported', 'other'],
-    ['AnamorphicVideoNotSupported', 'other'],
-    ['InterlacedVideoNotSupported', 'other'],
-    ['AudioSampleRateNotSupported', 'other'],
-    ['AudioBitDepthNotSupported', 'other'],
-    ['UnknownVideoStreamInfo', 'other'],
-    ['UnknownAudioStreamInfo', 'other'],
-    ['DirectPlayError', 'other'],
-    ['VideoCodecTagNotSupported', 'other'],
-    ['StreamCountExceedsLimit', 'other'],
-    ['VideoRotationNotSupported', 'other'],
+    ['AudioIsExternal', 'externalAudio'],
+    ['SecondaryAudioNotSupported', 'secondaryAudio'],
+    ['RefFramesNotSupported', 'refFrames'],
+    ['AnamorphicVideoNotSupported', 'anamorphic'],
+    ['InterlacedVideoNotSupported', 'interlaced'],
+    ['AudioSampleRateNotSupported', 'audioSampleRate'],
+    ['AudioBitDepthNotSupported', 'audioBitDepth'],
+    ['UnknownVideoStreamInfo', 'unknownStream'],
+    ['UnknownAudioStreamInfo', 'unknownStream'],
+    ['DirectPlayError', 'directPlayFailed'],
+    ['VideoCodecTagNotSupported', 'videoCodecTag'],
+    ['StreamCountExceedsLimit', 'streamCount'],
+    ['VideoRotationNotSupported', 'videoRotation'],
   ])('%s is %s', (name, reason) => {
     expect(transcodeReasons([name])).toEqual({ reasons: [reason], rawReasons: [name] });
   });

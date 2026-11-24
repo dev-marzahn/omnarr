@@ -5,6 +5,7 @@ import {
   type JellyfinSetupReason,
   type JellyfinStatus,
   type LibrarySize,
+  type NewerRelease,
   type RerunSetupResponse,
   type SetupStep,
   type SetupStepState,
@@ -80,10 +81,49 @@ const JELLYFIN_STATE: Record<JellyfinStatus['state'], string> = {
 
 export const jellyfinStateLabel = (state: JellyfinStatus['state']): string => JELLYFIN_STATE[state];
 
-/** The update check's note: the backend sends `latest` only for a newer release this install may take. */
-export function updateNote(release: SystemStatus['release']): { text: string; url: string } | undefined {
-  if (!release.latest || !release.releaseUrl) return undefined;
-  return { text: `omnarr ${release.latest} is available`, url: release.releaseUrl };
+const DEVELOPMENT_VERSION = '0.0.0-dev';
+
+export type UpdateCheckLine = { text: string; icon: string; tone: 'muted' | 'warning' | 'primary'; url?: string };
+
+const checkTime = new Intl.DateTimeFormat(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+
+const newerReleaseLine = (newer: NewerRelease): UpdateCheckLine => ({
+  text: `omnarr ${newer.latest} is available`,
+  icon: 'i-lucide-arrow-up-circle',
+  tone: 'primary',
+  url: newer.releaseUrl,
+});
+
+export function updateCheckLines(release: SystemStatus['release']): UpdateCheckLine[] {
+  const check = release.check;
+  switch (check.state) {
+    case 'off':
+      return [{ text: 'Update check is off', icon: 'i-lucide-bell-off', tone: 'muted' }];
+    case 'notYet':
+      return [{ text: "Update check hasn't run yet", icon: 'i-lucide-clock', tone: 'muted' }];
+    case 'upToDate':
+      return [
+        {
+          text:
+            release.version === DEVELOPMENT_VERSION
+              ? `Checked for releases ${checkTime.format(check.checkedAt)}`
+              : `Up to date · checked ${checkTime.format(check.checkedAt)}`,
+          icon: 'i-lucide-circle-check',
+          tone: 'muted',
+        },
+      ];
+    case 'available':
+      return [newerReleaseLine(check.newer)];
+    case 'failed':
+      return [
+        ...(check.knownNewer ? [newerReleaseLine(check.knownNewer)] : []),
+        {
+          text: `Update check failed ${checkTime.format(check.failedAt)}${check.lastCheckedAt === undefined ? '' : ` · last answered ${checkTime.format(check.lastCheckedAt)}`}`,
+          icon: 'i-lucide-triangle-alert',
+          tone: 'warning',
+        },
+      ];
+  }
 }
 
 /** "Jellyfin 12.4.0", with a warning when it isn't the release omnarr pins. */
@@ -254,6 +294,20 @@ export function storageGroups(storage: StorageStatus): StorageGroup[] {
     const first = storage.areas[areas[0]!];
     return { label: labels.join(', '), free: `${formatBytes(first.freeBytes)} free`, writable: first.writable };
   });
+}
+
+/**
+ * The free-space card's muted lines, on one filesystem: the areas share
+ * free space, and a torrent's download stays until its seeding goal, so a
+ * file prepared before then holds space twice. Downloads on another
+ * filesystem have their own warning instead.
+ */
+export function storageNotes(storage: StorageStatus): string[] {
+  if (!storage.librarySameDevice || !storage.downloadsSameDevice) return [];
+  return [
+    'These areas share one filesystem and its free space.',
+    'Preparing a file while its torrent is still seeding takes double space until the seeding goal is met.',
+  ];
 }
 
 export type LibrarySizeRow = { label: string; size: string; part: boolean };

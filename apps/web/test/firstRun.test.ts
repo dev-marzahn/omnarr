@@ -2,6 +2,7 @@
 import type { DownloadClientsDetail, FailureCode, JellyfinStatus, ScanStatus, SystemStatus } from '@omnarr/contracts';
 import { describe, expect, test } from 'vite-plus/test';
 
+import { needsLoginTest } from '../lib/downloads';
 import {
   addressLines,
   advanceTarget,
@@ -12,6 +13,7 @@ import {
   shouldStartScan,
   usenetSaved,
   usenetStepCanContinue,
+  usenetStepLeadingButton,
 } from '../lib/firstRun';
 
 describe('routeFor', () => {
@@ -72,7 +74,7 @@ const status = (overrides: Partial<SystemStatus> = {}): SystemStatus => ({
   clients: [nzbget],
   jobCounts: [],
   jellyfin: jellyfin(),
-  release: { version: '0.1.0' },
+  release: { version: '0.1.0', check: { state: 'notYet' } },
   ...overrides,
 });
 const clients = (torrents: boolean, torrentConfig: 'applied' | 'pending' = 'applied') =>
@@ -219,6 +221,36 @@ describe('usenetStepCanContinue: Continue once every server entered is saved', (
 
   test('the main server and every backup saved: Continue', () => {
     expect(usenetStepCanContinue(saved, false)).toBe(true);
+  });
+});
+
+describe('usenetStepLeadingButton: Continue leads while every saved server is unchanged, else Save', () => {
+  const server = { host: 'news.provider.example', port: 563, ssl: true, username: 'u', connections: 20, level: 0 };
+  const backup = { id: 'backup-1', host: 'eu.provider.example', port: 563, ssl: true, username: 'u', connections: 10, priority: 1, hasPassword: true };
+  const saved = { enabled: true, server, hasPassword: true, configVersion: 1, config: 'applied', backupServers: [] } as DownloadClientsDetail['usenet'];
+  const withBackup = { ...saved, backupServers: [backup] };
+  const form = { host: server.host, port: server.port, ssl: server.ssl, username: server.username, password: '', connections: server.connections };
+  const leading = (usenet: DownloadClientsDetail['usenet'], mainServerForm: typeof form, backupsUnsaved = false) =>
+    usenetStepLeadingButton(usenet, { mainServerUnsaved: needsLoginTest(mainServerForm, usenet.server), backupsUnsaved });
+
+  test('a saved provider and no edit: Continue leads, with or without saved backup servers', () => {
+    expect(leading(saved, form)).toBe('continue');
+    expect(leading(withBackup, form)).toBe('continue');
+  });
+
+  test('an edit or a typed password on the main server: Save leads again, with backup servers too', () => {
+    expect(leading(saved, { ...form, host: 'other.provider.example' })).toBe('save');
+    expect(leading(withBackup, { ...form, connections: 30 })).toBe('save');
+    expect(leading(withBackup, { ...form, password: 'secret' })).toBe('save');
+  });
+
+  test('a backup server draft or edit pending: Continue is disabled, so it does not lead', () => {
+    expect(leading(withBackup, form, true)).toBe('save');
+  });
+
+  test('no saved provider (or only a Test login): Save leads', () => {
+    expect(leading({ ...saved, server: undefined }, form)).toBe('save');
+    expect(leading({ ...saved, enabled: false }, form)).toBe('save');
   });
 });
 

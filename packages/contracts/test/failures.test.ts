@@ -28,9 +28,9 @@ describe('the failure table', () => {
     }
   });
 
-  test('among the codes that can be raised, only workerOffline, protocolMismatch, storageUnavailable and vpnDown have no fix action', () => {
+  test('among the codes that can be raised, only workerOffline, protocolMismatch, storageUnavailable, libraryUnavailable and vpnDown have no fix action', () => {
     const empty = RAISABLE.filter((code) => FIX_ACTIONS[code].length === 0);
-    expect(empty.sort()).toEqual(['protocolMismatch', 'storageUnavailable', 'vpnDown', 'workerOffline']);
+    expect(empty.sort()).toEqual(['libraryUnavailable', 'protocolMismatch', 'storageUnavailable', 'vpnDown', 'workerOffline']);
   });
 
   test('the indexer codes are never raised, so they offer no fix action', () => {
@@ -43,13 +43,14 @@ describe('the failure table', () => {
     expect(dismissable.sort()).toEqual(expected.sort());
   });
 
-  test('among the codes that can be raised, only workerOffline, protocolMismatch, diskFull, storageUnavailable, vpnDown, the two metadata codes and the two Jellyfin setup codes lack dismiss', () => {
+  test('among the codes that can be raised, only workerOffline, protocolMismatch, diskFull, storageUnavailable, libraryUnavailable, vpnDown, the two metadata codes and the two Jellyfin setup codes lack dismiss', () => {
     const lacking = RAISABLE.filter((code) => !FIX_ACTIONS[code].includes('dismiss'));
     expect(lacking.sort()).toEqual(
       [
         'diskFull',
         'jellyfinPasswordNotPushed',
         'jellyfinSetupNeeded',
+        'libraryUnavailable',
         'metadataKeyRejected',
         'metadataSourceUnavailable',
         'protocolMismatch',

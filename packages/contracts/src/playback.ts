@@ -282,11 +282,22 @@ export const ORIGINAL_RESTORED = "Original restored: the kept original fits the 
 
 // Plays.
 
-/** How a client plays a file; `directStream` is a remux by Jellyfin, so it isn't a direct play. */
-export const PlayMethod = z.enum(['directPlay', 'directStream', 'transcode']);
+/**
+ * How Jellyfin plays a file: as it is, a `remux` (video and audio copied into
+ * a new container) or a `transcode` (any stream converted).
+ */
+export const PlayMethod = z.enum(['directPlay', 'remux', 'transcode']);
 export type PlayMethod = z.infer<typeof PlayMethod>;
 
-/** Why a play wasn't a direct play, in platform terms. */
+/**
+ * A stored play's method: the live enum plus `directStream`, what the client
+ * reported as DirectStream before the method came from Jellyfin's transcode
+ * job. Such a play may have converted the audio, so it isn't a `remux`.
+ */
+export const StoredPlayMethod = z.union([PlayMethod, z.literal('directStream')]);
+export type StoredPlayMethod = z.infer<typeof StoredPlayMethod>;
+
+/** Why a play wasn't a direct play, in platform terms. `other` is a name Jellyfin 12.4 doesn't have. */
 export const TranscodeReason = z.enum([
   'container',
   'videoCodec',
@@ -302,6 +313,18 @@ export const TranscodeReason = z.enum([
   'subtitle',
   'bitrate',
   'other',
+  'externalAudio',
+  'secondaryAudio',
+  'refFrames',
+  'anamorphic',
+  'interlaced',
+  'audioSampleRate',
+  'audioBitDepth',
+  'unknownStream',
+  'directPlayFailed',
+  'videoCodecTag',
+  'streamCount',
+  'videoRotation',
 ]);
 export type TranscodeReason = z.infer<typeof TranscodeReason>;
 

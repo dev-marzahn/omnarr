@@ -32,6 +32,8 @@ const TITLES: Record<FailureCode, string> = {
   jellyfinMisread: 'Jellyfin reads the file as something else',
   unknownClientFailure: "The download client answered in a way omnarr doesn't know",
   storageUnavailable: "A storage folder can't be used",
+  libraryUnavailable: "A library folder can't be read: is the media share mounted?",
+  fileMissing: 'The file is gone from disk',
   vpnDown: 'The VPN is down',
   metadataKeyRejected: 'TMDB rejected the metadata key',
   metadataSourceUnavailable: 'A metadata source is unreachable',
@@ -137,6 +139,13 @@ export function fixConfirm(action: FixAction, row: IssueRow): FixConfirm | undef
   const episode = row.unit ? (row.unit.workKind === 'movie' ? row.unit.workTitle : episodeLabel(row.unit)) : 'the episode';
   switch (action) {
     case 'tryNextBest':
+      if (row.failureCode === 'fileMissing')
+        return {
+          title: 'Search again?',
+          description: `omnarr searches your indexers and grabs the best release for ${episode}. That starts a new run.`,
+          note: 'The missing file leaves the library once the new one plays. The Issue closes then, or as soon as the file is back on disk.',
+          confirm: 'Search again',
+        };
       return {
         title: 'Try the next-best release?',
         description: `omnarr searches your indexers again and grabs the best release for ${episode} that isn't blocklisted. That starts a new run.`,

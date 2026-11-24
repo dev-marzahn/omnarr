@@ -14,7 +14,20 @@ import { join } from 'node:path';
 import { makeFunctionReference } from 'convex/server';
 import { afterAll, beforeAll, expect, test } from 'vite-plus/test';
 
-import { compose, dataFiles, dataFolders, down, jellyfinSeriesItems, rows, setUpJellyfinThroughProduct, up, waitFor, type Deployment } from './stack.ts';
+import {
+  after,
+  compose,
+  dataFiles,
+  dataFolders,
+  down,
+  jellyfinSeriesItems,
+  rows,
+  runInternal,
+  setUpJellyfinThroughProduct,
+  up,
+  waitFor,
+  type Deployment,
+} from './stack.ts';
 
 // The backend's generated API isn't a dependency of this package, so calls go by name.
 // oxlint-disable-next-line typescript/no-explicit-any
@@ -48,8 +61,10 @@ const ANIME = { folder: 'Star Lantern (2022)', file: 'Star Lantern - 013.mp4', w
 /** A loose clip whose name says nothing, with an English subtitle beside it; matched by hand to Old Show S01E25. */
 const CLIP = { folder: 'Holiday Footage 2019', file: 'clip_0001.mp4', subtitle: 'clip_0001.en.srt' };
 
+const SECOND_MISS_CONFIRMS_AFTER_MS = 1_000;
+
 beforeAll(async () => {
-  d = await up();
+  d = await up({ limits: { fileMissingConfirmMs: SECOND_MISS_CONFIRMS_AFTER_MS } });
 }, 600_000);
 afterAll(() => {
   if (process.env.E2E_KEEP !== '1') return down();
@@ -188,3 +203,85 @@ test('a Sonarr library is scanned, matched to TMDB and tracked where it is; file
   expect(rows<{ class: string }>(d.env, 'jobs').filter((j) => j.class === 'prepare')).toEqual([]);
   expect(rows(d.env, 'searchAttempts')).toEqual([]);
 }, 1_200_000);
+
+type CheckJob = { _id: string; status: string; idempotencyKey: string };
+const checkJobsByKeySinceDoneJobsDropTheirPayload = () => rows<CheckJob>(d.env, 'jobs').filter((j) => j.idempotencyKey.startsWith('checkLibraryFiles:'));
+const checkJobs = checkJobsByKeySinceDoneJobsDropTheirPayload;
+const waitPastTheConfirmWindow = () => new Promise((resolve) => setTimeout(resolve, SECOND_MISS_CONFIRMS_AFTER_MS));
+
+async function runCheckAsTheCronStartsIt(): Promise<void> {
+  const known = new Set(checkJobs().map((j) => j._id));
+  await waitFor(
+    'no check to be running',
+    async () => (checkJobs().every((j) => ['done', 'failed', 'cancelled'].includes(j.status)) ? true : undefined),
+    60_000,
+    250,
+  );
+  runInternal(d, 'library/missingFiles:scheduledCheck');
+  const job = await waitFor(
+    'the check to end',
+    async () => checkJobs().find((j) => !known.has(j._id) && ['done', 'failed', 'cancelled'].includes(j.status)),
+    60_000,
+    250,
+  );
+  expect(job.status).toBe('done');
+}
+
+test('a tracked file that disappears stops playing with an Issue; a library root that is gone marks nothing; the file coming back clears it', async (ctx) => {
+  after(ctx, 'a Sonarr library is scanned');
+  const readyFittingS01E02 = EPISODES[1]!;
+  const path = `${FOLDER}/${readyFittingS01E02.relPath}`;
+  const fileRow = () => rows<{ path: string; missingSeenAt?: number; missingSince?: number }>(d.env, 'files').find((f) => f.path === path)!;
+  const issues = () => rows<{ failureCode: string; state: string; detail?: string }>(d.env, 'issues');
+  const open = (code: string) => issues().filter((i) => i.failureCode === code && i.state === 'open');
+  const oldShowId = rows<{ _id: string; title: string }>(d.env, 'works').find((w) => w.title === 'Old Show')!._id;
+  const stateOf2 = async () =>
+    (await query('api/library:detail', { workId: oldShowId })).units.find((u: Any) => u.tmdbSeason === 1 && u.tmdbEpisode === 2)?.state;
+  const sh = (command: string) => compose(['exec', '-T', 'worker', 'sh', '-c', command], ['test', 'worker']);
+
+  const theSeriesRootGoneMarksNothingAndRaisesOneStorageIssue = async () => {
+    sh(`mv "${ROOT}" "${ROOT}.unmounted"`);
+    try {
+      await runCheckAsTheCronStartsIt();
+      await waitPastTheConfirmWindow();
+      await runCheckAsTheCronStartsIt();
+      expect(rows<{ missingSeenAt?: number; missingSince?: number }>(d.env, 'files').filter((f) => f.missingSeenAt || f.missingSince)).toEqual([]);
+      expect(open('libraryUnavailable').map((i) => i.detail)).toEqual([expect.stringContaining(`The Series folder ${ROOT} is missing.`)]);
+      expect(open('fileMissing')).toEqual([]);
+    } finally {
+      sh(`mv "${ROOT}.unmounted" "${ROOT}"`);
+    }
+    await runCheckAsTheCronStartsIt();
+    expect(open('libraryUnavailable')).toEqual([]);
+  };
+
+  const oneFileGoneIsMissingOnTheSecondMissAndItsIssueOffersASearch = async () => {
+    sh(`mv "${path}" /data/staging/aside.mp4`);
+    await runCheckAsTheCronStartsIt();
+    expect(fileRow().missingSeenAt).toBeTypeOf('number');
+    await waitPastTheConfirmWindow();
+    await runCheckAsTheCronStartsIt();
+    expect(fileRow().missingSince).toBeTypeOf('number');
+    expect(open('fileMissing').map((i) => i.detail)).toEqual([expect.stringContaining(path)]);
+    const unmonitoredSoNoLongerReadyReadsAs = 'notMonitored';
+    expect(await stateOf2()).toBe(unmonitoredSoNoLongerReadyReadsAs);
+    const list = await query('api/issues:list');
+    const row = [...list.needsAction, ...list.inProgress].find((i: Any) => i.failureCode === 'fileMissing');
+    expect(row?.fixActions).toEqual(['tryNextBest', 'searchAndPick', 'dismiss']);
+  };
+
+  await theSeriesRootGoneMarksNothingAndRaisesOneStorageIssue();
+  await oneFileGoneIsMissingOnTheSecondMissAndItsIssueOffersASearch();
+
+  sh(`mv /data/staging/aside.mp4 "${path}"`);
+  await runCheckAsTheCronStartsIt();
+  expect(fileRow().missingSince).toBeUndefined();
+  expect(open('fileMissing')).toEqual([]);
+  await waitFor(
+    'the file to be visible in Jellyfin again',
+    async () => (rows<{ state: string }>(d.env, 'publications').every((p) => p.state === 'visible') ? true : undefined),
+    120_000,
+    1_000,
+  );
+  expect(await stateOf2()).toBe('ready');
+}, 600_000);

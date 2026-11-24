@@ -6,7 +6,8 @@
 # Every setting is optional; .env.example lists them. For the VPN layout add
 # `COMPOSE_FILE=compose.yml:compose.vpn.yml` to .env. State lives in Docker
 # volumes, not in this folder: see docs/install.md before you back up or move
-# the install.
+# the install. The media folder (OMNARR_DATA_DIR) is a long-syntax bind in
+# every service: Coolify reads a variable in a bind's host path only there.
 #
 # These pins are the release's manifest: every image by tag and digest.
 name: omnarr
@@ -36,7 +37,10 @@ services:
       - gluetun-auth:/gluetun-auth
       - jellyfin-config:/jellyfin-config
       - jellyfin-cache:/jellyfin-cache
-      - ${OMNARR_DATA_DIR:-./data}:/data
+      - type: bind
+        source: ${OMNARR_DATA_DIR:-./data}
+        target: /data
+        bind: { create_host_path: true }
       - ./vpn:/vpn
       - ./backups:/backups
       # Docker creates it as root's; setup gives it PUID:PGID, so the user can add files.
@@ -95,7 +99,10 @@ services:
       # Where the worker downloads Prowlarr's site definitions; your own go in ./definitions.
       OMNARR_DEFINITIONS_URL: ${OMNARR_DEFINITIONS_URL:-https://indexers.prowlarr.com/master}
     volumes:
-      - ${OMNARR_DATA_DIR:-./data}:/data
+      - type: bind
+        source: ${OMNARR_DATA_DIR:-./data}
+        target: /data
+        bind: { create_host_path: true }
       - secrets:/run/omnarr/secrets:ro
       - ./vpn:/vpn
       - ./definitions:/definitions:ro
@@ -130,7 +137,10 @@ services:
       PGID: ${PGID:-1000}
     volumes:
       - nzbget-config:/config
-      - ${OMNARR_DATA_DIR:-./data}:/data
+      - type: bind
+        source: ${OMNARR_DATA_DIR:-./data}
+        target: /data
+        bind: { create_host_path: true }
     depends_on:
       setup: { condition: service_completed_successfully }
 
@@ -145,7 +155,10 @@ services:
       PGID: ${PGID:-1000}
     volumes:
       - qbittorrent-config:/config
-      - ${OMNARR_DATA_DIR:-./data}:/data
+      - type: bind
+        source: ${OMNARR_DATA_DIR:-./data}
+        target: /data
+        bind: { create_host_path: true }
     # The peer port, on all addresses; the WebUI stays internal.
     ports:
       - ${OMNARR_PEER_PORT:-6881}:${OMNARR_PEER_PORT:-6881}
@@ -162,7 +175,11 @@ services:
     volumes:
       - jellyfin-config:/config
       - jellyfin-cache:/cache
-      - ${OMNARR_DATA_DIR:-./data}:/data:ro
+      - type: bind
+        source: ${OMNARR_DATA_DIR:-./data}
+        target: /data
+        read_only: true
+        bind: { create_host_path: true }
     ports:
       - ${OMNARR_BIND_ADDRESS:-0.0.0.0}:${OMNARR_JELLYFIN_PORT:-8096}:8096
     depends_on:

@@ -212,7 +212,7 @@ export function fileRows(files: readonly FileRow[]): FileTabRow[] {
         fileId: file.fileId,
         name: file.path.slice(slash + 1),
         folder: file.path.slice(0, Math.max(slash, 0)),
-        kind: KIND_LABEL[file.kind],
+        kind: file.missingSince === undefined ? KIND_LABEL[file.kind] : 'Missing from disk',
         origin: ORIGIN_LABEL[file.origin],
         fit: fitOf(file),
         sidecars: file.sidecars.map(sidecarLabel),

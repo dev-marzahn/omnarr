@@ -163,6 +163,7 @@ export const FileRow = z
     /** The steps `compare` gives against the library's target; empty when it fits or has no probe. */
     steps: z.array(PlanStep),
     sidecars: z.array(Sidecar),
+    missingSince: z.number().optional(),
   })
   .strict();
 export type FileRow = z.infer<typeof FileRow>;

@@ -156,8 +156,8 @@ describe('jellyfin.playback.report', () => {
     await report(sessionId, [CHROME]);
     const [before] = await rows();
     vi.setSystemTime(NOW + 30_000);
-    await report(sessionId, [{ ...CHROME, method: 'directStream', reasons: ['container'], rawReasons: ['ContainerNotSupported'] }]);
-    expect(await rows()).toEqual([{ ...before, method: 'directStream', reasons: ['container'], rawReasons: ['ContainerNotSupported'] }]);
+    await report(sessionId, [{ ...CHROME, method: 'remux', reasons: ['container'], rawReasons: ['ContainerNotSupported'] }]);
+    expect(await rows()).toEqual([{ ...before, method: 'remux', reasons: ['container'], rawReasons: ['ContainerNotSupported'] }]);
   });
 
   test('a play missing from the set gets endedAt and open = false; the others stay open', async () => {
@@ -258,6 +258,28 @@ describe('units.plays', () => {
   test('carries the reasons of a transcode', async () => {
     await report(await connect(), [CHROME]);
     expect(await plays()).toEqual([{ deviceName: 'Chrome', client: 'Jellyfin Web', method: 'transcode', reasons: ['audioCodec'], startedAt: NOW }]);
+  });
+
+  test('returns a legacy row as it was stored: the client-reported directStream, and other', async () => {
+    await t.run((ctx) =>
+      ctx.db.insert('playbackReports', {
+        owner: OWNER,
+        deviceId: 'dev-old',
+        deviceName: 'Old Phone',
+        client: 'Jellyfin Android',
+        itemRef: 'item-e1',
+        unitId,
+        method: 'directStream',
+        reasons: ['other'],
+        rawReasons: ['DirectPlayError'],
+        open: false,
+        startedAt: START,
+        endedAt: START + 60_000,
+      }),
+    );
+    expect(await plays()).toEqual([
+      { deviceName: 'Old Phone', client: 'Jellyfin Android', method: 'directStream', reasons: ['other'], startedAt: START, endedAt: START + 60_000 },
+    ]);
   });
 
   test('refuses a worker caller: with its token, and with no admin session', async () => {

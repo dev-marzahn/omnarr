@@ -11,6 +11,10 @@ export function stateOfNewUnit(unit: { monitored: boolean; airDateUtc?: number }
   return deriveUnitState({ now, monitored: unit.monitored, airDateUtc: unit.airDateUtc, hasOpenIssue: false, hasPendingRendition: false, versions: [] });
 }
 
+export async function isMissing(ctx: QueryCtx, fileId: Id<'files'>): Promise<boolean> {
+  return (await ctx.db.get(fileId))?.missingSince !== undefined;
+}
+
 /** Everything the Unit state rules read about one Unit, all through indexes. */
 export async function unitSnapshot(ctx: QueryCtx, unit: Doc<'units'>, now: number): Promise<UnitSnapshot> {
   const grab = unit.activeGrabId ? await ctx.db.get(unit.activeGrabId) : null;
@@ -64,6 +68,10 @@ export async function unitSnapshot(ctx: QueryCtx, unit: Doc<'units'>, now: numbe
     .collect();
 
   const attempt = unit.lastSearchAttemptId ? await ctx.db.get(unit.lastSearchAttemptId) : null;
+  for (const version of versions) {
+    const goneFromDiskWhateverJellyfinLastSaid = visible.has(version._id) && (await isMissing(ctx, version.fileId));
+    if (goneFromDiskWhateverJellyfinLastSaid) visible.delete(version._id);
+  }
 
   return {
     now,

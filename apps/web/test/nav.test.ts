@@ -62,7 +62,7 @@ const status = (overrides: Partial<SystemStatus>): SystemStatus => ({
   clients: [],
   jobCounts: [],
   jellyfin: notSetUp,
-  release: { version: '0.1.0' },
+  release: { version: '0.1.0', check: { state: 'notYet' } },
   ...overrides,
 });
 

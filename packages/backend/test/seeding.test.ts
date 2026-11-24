@@ -155,18 +155,45 @@ describe('seedingDone and seedingLost', () => {
     expect(await removals()).toHaveLength(1);
   });
 
-  test('seedingLost removes the torrent without its data, with its own event, and no unit-scope Issue', async () => {
+  test('seedingLost removes the torrent with its data, so files of one in error never stay behind, with its own event, and no unit-scope Issue', async () => {
     const downloadId = await downloaded();
     await done();
     await w.seedingLost(downloadId);
     await h.settle();
     const [removal] = await removals();
-    expect(removal!.payload).toMatchObject({ action: 'removeDownload', downloadId, deleteData: false });
+    expect(removal!.payload).toMatchObject({ action: 'removeDownload', downloadId, deleteData: true });
     const messages = (await h.all('events')).map((event) => event.message);
     expect(messages).toContain('Seeding stopped: files missing');
     expect(await h.all('issues')).toEqual([]);
     await removeAsked();
     expect((await downloadOf()).state).toBe('removed');
+  });
+
+  test('seedingLost of a Grab that failed on a system error keeps its data: the download is its only copy, for the Issue to retry', async () => {
+    const downloadId = await downloaded({ private: false });
+    const [job] = await w.claim('import');
+    await w.fail(job!, 'storageUnavailable', 'The share dropped.');
+    await h.settle();
+    expect((await grabOf()).state).toBe('failed');
+    expect(await removals()).toEqual([]);
+    const open = async () => (await h.all('issues')).filter((issue) => issue.failureCode === 'storageUnavailable' && issue.state === 'open');
+    expect(await open()).toHaveLength(1);
+
+    // The share comes back, but qBittorrent still says missing files.
+    await w.seedingLost(downloadId);
+    await h.settle();
+    expect((await removals()).map((removal) => removal.payload)).toEqual([
+      expect.objectContaining({ action: 'removeDownload', downloadId, deleteData: false }),
+    ]);
+    expect(await open()).toHaveLength(1);
+  });
+
+  test('seedingLost is ignored while the Grab is importing: its data is never removed before the import has its file', async () => {
+    const downloadId = await downloaded();
+    expect((await grabOf()).state).toBe('importing');
+    await w.seedingLost(downloadId);
+    await h.settle();
+    expect(await removals()).toEqual([]);
   });
 
   test('other outcomes on a completed Download are ignored', async () => {

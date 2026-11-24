@@ -82,10 +82,10 @@ describe('startPlaybackWatch', () => {
   });
 
   test('only a changed set is reported; the order of the plays is no change', async () => {
-    answers = [[TABLET], [TABLET], [TABLET, CHROME], [CHROME, TABLET], [{ ...CHROME, method: 'directStream' }, TABLET], []];
+    answers = [[TABLET], [TABLET], [TABLET, CHROME], [CHROME, TABLET], [{ ...CHROME, method: 'remux' }, TABLET], []];
     start();
     await poll(7);
-    expect(backend.playReports.map((report) => report.plays)).toEqual([[TABLET], [TABLET, CHROME], [{ ...CHROME, method: 'directStream' }, TABLET], []]);
+    expect(backend.playReports.map((report) => report.plays)).toEqual([[TABLET], [TABLET, CHROME], [{ ...CHROME, method: 'remux' }, TABLET], []]);
   });
 
   test("doesn't run while the connection isn't ready, and starts when it is", async () => {

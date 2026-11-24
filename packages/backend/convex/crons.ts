@@ -24,6 +24,8 @@ crons.daily('retention.runs', { hourUTC: 4, minuteUTC: 0 }, internal.pipeline.re
 // The periodic untracked-media scan, when its schedule is due.
 crons.daily('scan.schedule', { hourUTC: 5, minuteUTC: 0 }, internal.scan.start.checkSchedule, {});
 
+crons.interval('library.checkFiles', { hours: 6 }, internal.library.missingFiles.scheduledCheck, {});
+
 // Prowlarr's definitions, once a day.
 crons.daily('definitions.sync', { hourUTC: 2, minuteUTC: 30 }, internal.sites.definitions.dailySync, {});
 

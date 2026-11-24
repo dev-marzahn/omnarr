@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vite-plus/tes
 
 import { api, internal } from '../convex/_generated/api';
 import type { Doc, Id } from '../convex/_generated/dataModel';
-import { cancelForUnit, decide, prepareAllPage, prepareEnded, start } from '../convex/pipeline/preparation';
+import { cancelForUnit, decide, prepareAllPage, prepareEnded, retireOldVersions, start } from '../convex/pipeline/preparation';
 import {
   BLURAY_PROBE,
   HEVC_PROBE,
@@ -699,6 +699,86 @@ describe('a kept original that fits is restored', () => {
         { class: 'maintenance', action: 'deleteLibraryFiles', paths: [moved, movedSrt], libraryId: libraries.series, folders: [] },
       ],
     ]);
+  });
+});
+
+describe('a primary the tracked-file check found gone is never retired', () => {
+  let w: PrepareWorker;
+  beforeEach(async () => {
+    w = await prepareWorker(t);
+  });
+
+  const OLD = `${SEASON_1}/Show (2019) - S01E02 [HDTV-720p][AAC 2.0][h264]-OLD.mp4`;
+  const missing = (fileId: Id<'files'>) => t.run((ctx) => ctx.db.patch(fileId, { missingSince: 1, missingSeenAt: 0 }));
+  const publicationOf = async (fileId: Id<'files'>) => {
+    const version = (await all('fileVersions')).find((row) => row.fileId === fileId)!;
+    return (await all('publications')).find((row) => row.fileVersionId === version._id)!;
+  };
+  const missingFileAOfEachKindARetireCanMeet: Record<string, () => Promise<Id<'files'>>> = {
+    'the missing download itself': async () => (await seedFile(t, { unitIds: [pilot], path: OLD, fits: true })).fileId,
+    'a scanned file (the user’s own)': async () =>
+      (await seedFile(t, { unitIds: [pilot], path: OLD, origin: 'scan', keepsName: true, release: null, fits: true })).fileId,
+    'a misread one': async () => {
+      const { fileId } = await seedFile(t, { unitIds: [pilot], path: OLD, fits: true });
+      const { _id } = await publicationOf(fileId);
+      await t.run((ctx) => ctx.db.patch(_id, { state: 'failed', targetItemRef: undefined }));
+      return fileId;
+    },
+    'a pending one (its Publication not done)': async () => {
+      const { fileId } = await seedFile(t, { unitIds: [pilot], path: OLD, fits: true });
+      const { _id } = await publicationOf(fileId);
+      await t.run((ctx) => ctx.db.patch(_id, { state: 'pending', targetItemRef: undefined }));
+      return fileId;
+    },
+    'a kept original': async () => (await seedFile(t, { unitIds: [pilot], path: ORIGINAL_PATH, kind: 'original', published: false })).fileId,
+  };
+
+  for (const [name, seed] of Object.entries(missingFileAOfEachKindARetireCanMeet))
+    test(`${name}: a new file prepared and then made primary leaves it with all its rows, and deletes nothing`, async () => {
+      const a = await seed();
+      await missing(a);
+      const before = { file: await get(a), versions: (await all('fileVersions')).filter((row) => row.fileId === a) };
+      const { fileId: newReleaseB } = await seedFile(t, { unitIds: [pilot], published: false });
+      await runDecide(newReleaseB);
+      const { payload, result } = await w.prepareNext();
+      expect(payload.replacesPath).toBeUndefined();
+      if (result.noChange) throw new Error('expected an output');
+      const output = (await all('files')).find((file) => file.path === result.outputPath)!;
+      await t.run((ctx) => retireOldVersions(ctx, pilot, output._id));
+
+      expect(await get(a)).toEqual(before.file);
+      expect((await all('fileVersions')).filter((row) => row.fileId === a)).toEqual(before.versions);
+      const deleted = (await all('jobs')).flatMap((job) =>
+        job.payload?.class === 'maintenance' && job.payload.action === 'deleteLibraryFiles' ? job.payload.paths : [],
+      );
+      expect(deleted).not.toContain(before.file!.path);
+    });
+
+  test('a held upgrade whose only primary is missing isn’t prepared (its output folder would be the held folder); with the primary there, its output goes beside it', async () => {
+    const HELD = '/data/staging/held/j1/Show.S01E02.1080p.WEB-DL.mkv';
+    const { fileId: primaryId } = await seedFile(t, { unitIds: [pilot], path: OLD, fits: true });
+    const { fileId: heldId } = await seedFile(t, { unitIds: [pilot], path: HELD, kind: 'staged', published: false });
+    await missing(primaryId);
+    expect(await runStart(heldId, 'import')).toBeNull();
+    expect(await prepareJobs()).toEqual([]);
+
+    await t.run((ctx) => ctx.db.patch(primaryId, { missingSince: undefined, missingSeenAt: undefined }));
+    const renditionId = await runStart(heldId, 'import');
+    expect((await payloadOf(renditionId!)).outputFolder).toBe(SEASON_1);
+  });
+
+  test('a kept original’s job never names a missing primary as the file it replaces, and leaves it be', async () => {
+    await admin.mutation(api.api.playback.update, { libraryId: libraries.series, draft: { mode: 'devices', devices: DEFAULT_DEVICES, keepOriginal: true } });
+    const { originalId, primaryId } = await seedKeptOriginal(WEBDL_PROBE);
+    await missing(primaryId);
+    await runStart(originalId, 'manual');
+    const [job] = await w.claim();
+    const payload = w.payloadOf(job!);
+    expect(payload.replacesPath).toBeUndefined();
+    await w.complete(job!, preparedResult(payload));
+    expect((await get(primaryId))!.path).toBe(OLD_PRIMARY_PATH);
+    expect((await all('fileVersions')).filter((row) => row.fileId === primaryId).map((row) => row.kind)).toEqual(['primary']);
+    expect((await all('jobs')).filter((j) => j.class === 'maintenance')).toEqual([]);
   });
 });
 

@@ -2,9 +2,11 @@
 // release in the default runtime, with only `Accept` and `User-Agent`. Its
 // result goes into `settings.updateCheck`; a failure writes `failedAt` and is
 // never an Issue. `UPDATE_CHECK=off` makes no request.
+import type { NewerRelease, UpdateCheck } from '@omnarr/contracts';
 import { v } from 'convex/values';
 
 import { internal } from './_generated/api';
+import type { Doc } from './_generated/dataModel';
 import { internalAction, internalMutation } from './_generated/server';
 import { ensureSettingsRow } from './setup/settings';
 
@@ -37,17 +39,36 @@ export function offers(current: string, latest: string): boolean {
   return b.pre.localeCompare(a.pre, undefined, { numeric: true }) > 0;
 }
 
-/** The latest release's version and page, or undefined when there is no note to show. */
-export function availableUpdate(current: string, check: { latestVersion?: string; releaseUrl?: string } | undefined) {
-  if (!check?.latestVersion || !check.releaseUrl || !offers(current, check.latestVersion)) return undefined;
-  return { latest: check.latestVersion, releaseUrl: check.releaseUrl };
+type StoredCheck = Doc<'settings'>['updateCheck'];
+
+const checkIsOff = (): boolean => process.env.UPDATE_CHECK === 'off';
+
+function newerRelease(current: string, stored: StoredCheck): NewerRelease | undefined {
+  if (!stored?.latestVersion || !stored.releaseUrl || !offers(current, stored.latestVersion)) return undefined;
+  return { latest: stored.latestVersion, releaseUrl: stored.releaseUrl };
+}
+
+export function updateCheckOf(current: string, stored: StoredCheck): UpdateCheck {
+  if (checkIsOff()) return { state: 'off' };
+  const newer = newerRelease(current, stored);
+  const checkedAt = stored?.checkedAt;
+  if (stored?.failedAt !== undefined) {
+    return {
+      state: 'failed',
+      failedAt: stored.failedAt,
+      ...(checkedAt !== undefined ? { lastCheckedAt: checkedAt } : {}),
+      ...(newer ? { knownNewer: newer } : {}),
+    };
+  }
+  if (checkedAt === undefined) return { state: 'notYet' };
+  return newer ? { state: 'available', newer, checkedAt } : { state: 'upToDate', checkedAt };
 }
 
 export const check = internalAction({
   args: {},
   returns: v.null(),
   handler: async (ctx) => {
-    if (process.env.UPDATE_CHECK === 'off') return null;
+    if (checkIsOff()) return null;
     try {
       const response = await fetch(LATEST_RELEASE_URL, {
         headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'omnarr' },

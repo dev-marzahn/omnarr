@@ -2,7 +2,7 @@ import { defineConfig } from 'vite-plus';
 
 // Generated code keeps the style of whatever generates it. docs/ holds research
 // spikes with their own toolchains.
-const generated = ['**/_generated/**', '**/_generated.ts', '**/betterAuth/schema.ts', '**/.nuxt/**', '**/.output/**', 'docs/**'];
+const generated = ['**/_generated/**', '**/_generated.ts', '**/betterAuth/schema.ts', '**/.nuxt/**', '**/.output/**', 'docs/**', 'compose.vpn.merged.yml'];
 
 export default defineConfig({
   fmt: {

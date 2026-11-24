@@ -96,6 +96,11 @@ export const usenetSaved = (usenet: DownloadClientsDetail['usenet']): boolean =>
 
 export const usenetStepCanContinue = (usenet: DownloadClientsDetail['usenet'], backupsUnsaved: boolean): boolean => usenetSaved(usenet) && !backupsUnsaved;
 
+export type UsenetStepEdits = { mainServerUnsaved: boolean; backupsUnsaved: boolean };
+
+export const usenetStepLeadingButton = (usenet: DownloadClientsDetail['usenet'], edits: UsenetStepEdits): 'continue' | 'save' =>
+  usenetStepCanContinue(usenet, edits.backupsUnsaved) && !edits.mainServerUnsaved ? 'continue' : 'save';
+
 const ended = (scan: ScanStatus) => scan.run?.trigger === 'firstRun' && ['ready', 'failed', 'cancelled'].includes(scan.run.state);
 
 /** The finish step starts `scan.start('firstRun')` once, when no first-run scan exists. */

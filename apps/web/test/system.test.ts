@@ -14,11 +14,12 @@ import {
   rerunErrorText,
   setupStepRows,
   storageGroups,
+  storageNotes,
   storageRows,
   storageUnavailableText,
   storageWarnings,
   supportBundleLine,
-  updateNote,
+  updateCheckLines,
   videoEncoders,
   workerLine,
 } from '../lib/system';
@@ -48,7 +49,7 @@ const status = (overrides: Partial<SystemStatus>): SystemStatus => ({
   clients: [],
   jobCounts: [],
   jellyfin: notSetUp,
-  release: { version: '0.1.0' },
+  release: { version: '0.1.0', check: { state: 'notYet' } },
   ...overrides,
 });
 
@@ -417,6 +418,20 @@ describe('the free-space card', () => {
     ]);
   });
 
+  // A torrent's download stays while it seeds, so free space comes back only at the goal.
+  test('one filesystem: the areas share free space, and seeding holds a prepared file twice', () => {
+    expect(storageNotes(storage())).toEqual([
+      'These areas share one filesystem and its free space.',
+      'Preparing a file while its torrent is still seeding takes double space until the seeding goal is met.',
+    ]);
+  });
+
+  test('no notes when downloads or the library are elsewhere: their warnings say it', () => {
+    const { areas } = storage();
+    expect(storageNotes(storage({ downloadsSameDevice: false }))).toEqual([]);
+    expect(storageNotes(storage({ librarySameDevice: false, areas: { ...areas, movies: area(1e12, 'sdb1') } }))).toEqual([]);
+  });
+
   describe('the Library rows', () => {
     const size = (totalBytes: number, seriesBytes: number, moviesBytes: number) => ({ totalBytes, seriesBytes, moviesBytes, measuredAt: 0 });
 
@@ -502,12 +517,52 @@ describe('the free-space card', () => {
   });
 });
 
-test('updateNote: "omnarr <latest> is available" with its release page, only when the check found a newer release', () => {
-  expect(updateNote({ version: '1.2.0', latest: '1.3.0', releaseUrl: 'https://github.com/dev-marzahn/omnarr/releases/tag/v1.3.0' })).toEqual({
-    text: 'omnarr 1.3.0 is available',
-    url: 'https://github.com/dev-marzahn/omnarr/releases/tag/v1.3.0',
+describe("the System page's update check", () => {
+  const releaseUrl = 'https://github.com/dev-marzahn/omnarr/releases/tag/v1.3.0';
+  const newer = { latest: '1.3.0', releaseUrl };
+  const at = Date.UTC(2026, 10, 24, 6, 30);
+  const texts = (release: SystemStatus['release']) => updateCheckLines(release).map((line) => line.text);
+
+  test('a newer release: "omnarr <latest> is available", linked to its page', () => {
+    expect(updateCheckLines({ version: '1.2.0', check: { state: 'available', newer, checkedAt: at } })).toEqual([
+      { text: 'omnarr 1.3.0 is available', icon: 'i-lucide-arrow-up-circle', tone: 'primary', url: releaseUrl },
+    ]);
   });
-  expect(updateNote({ version: '1.2.0' })).toBeUndefined();
+
+  test('up to date, with the time of the last check', () => {
+    const [line] = updateCheckLines({ version: '1.3.0', check: { state: 'upToDate', checkedAt: at } });
+    expect(line).toMatchObject({ tone: 'muted', text: expect.stringMatching(/^Up to date · checked .*(24 Nov|Nov 24)/) });
+    expect(line!.url).toBeUndefined();
+  });
+
+  test('a development build is never offered a release, so it says only when the check ran', () => {
+    expect(texts({ version: '0.0.0-dev', check: { state: 'upToDate', checkedAt: at } })).toEqual([expect.stringMatching(/^Checked for releases /)]);
+  });
+
+  test('turned off', () => {
+    expect(texts({ version: '1.3.0', check: { state: 'off' } })).toEqual(['Update check is off']);
+  });
+
+  test('not run yet', () => {
+    expect(texts({ version: '1.3.0', check: { state: 'notYet' } })).toEqual(["Update check hasn't run yet"]);
+  });
+
+  test('failed: a warning with its time, and when the check last answered if it ever did', () => {
+    expect(updateCheckLines({ version: '1.3.0', check: { state: 'failed', failedAt: at } })).toEqual([
+      { text: expect.stringMatching(/^Update check failed [^·]+$/), icon: 'i-lucide-triangle-alert', tone: 'warning' },
+    ]);
+    expect(texts({ version: '1.3.0', check: { state: 'failed', failedAt: at, lastCheckedAt: at - 86_400_000 } })).toEqual([
+      expect.stringMatching(/^Update check failed .+ · last answered .*(23 Nov|Nov 23)/),
+    ]);
+  });
+
+  test('failed after finding a newer release: the release stays linked above the warning', () => {
+    const lines = updateCheckLines({ version: '1.2.0', check: { state: 'failed', failedAt: at, lastCheckedAt: at, knownNewer: newer } });
+    expect(lines.map((line) => [line.tone, line.url])).toEqual([
+      ['primary', releaseUrl],
+      ['warning', undefined],
+    ]);
+  });
 });
 
 test('formatBytes', () => {

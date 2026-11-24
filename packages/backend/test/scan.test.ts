@@ -36,7 +36,10 @@ const entry = (path: string, sizeBytes = 1_000_000_000): ScanEntry => ({ path, s
 
 const startScan = async () => (await admin.mutation(api.api.scan.start, { trigger: 'manual' })).scanRunId;
 const claimScan = async (): Promise<LeasedJob> => {
-  const [job] = await w.claim('maintenance');
+  const pastAnEarlierReadsQueuedFileCheck = 5;
+  const job = (await w.claim('maintenance', pastAnEarlierReadsQueuedFileCheck)).find(
+    (leased) => leased.payload.class === 'maintenance' && leased.payload.action === 'scanLibrary',
+  );
   if (job?.payload.class !== 'maintenance' || job.payload.action !== 'scanLibrary') throw new Error('no scan job');
   return job;
 };

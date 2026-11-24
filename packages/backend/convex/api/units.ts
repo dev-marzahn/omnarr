@@ -229,6 +229,7 @@ export async function filesOf(ctx: QueryCtx, unit: Doc<'units'>, work: Doc<'work
       fits: version.fits,
       steps: file.probe ? compare(file.probe, target).steps : [],
       sidecars: file.sidecars ?? [],
+      ...(file.missingSince !== undefined ? { missingSince: file.missingSince } : {}),
     });
   }
   return rows;

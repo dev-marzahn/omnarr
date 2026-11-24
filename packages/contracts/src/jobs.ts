@@ -156,6 +156,9 @@ export const PublishPayload = z.object({
 });
 export type PublishPayload = z.infer<typeof PublishPayload>;
 
+export const LibraryRootState = z.enum(['available', 'missing', 'empty', 'otherDevice', 'unreadable', 'mostMissing']);
+export type LibraryRootState = z.infer<typeof LibraryRootState>;
+
 export const MaintenancePayload = z.discriminatedUnion('action', [
   z.object({
     class: z.literal('maintenance'),
@@ -228,6 +231,11 @@ export const MaintenancePayload = z.discriminatedUnion('action', [
     scanRunId: zid('scanRuns'),
     roots: z.array(z.object({ libraryId: zid('libraries'), path: z.string() })),
     ignores: z.array(z.string()),
+  }),
+  z.object({
+    class: z.literal('maintenance'),
+    action: z.literal('checkLibraryFiles'),
+    roots: z.array(z.object({ libraryId: zid('libraries'), path: z.string() })),
   }),
   // Holds a plaintext password until the job ends. Never log it.
   z.object({ class: z.literal('maintenance'), action: z.literal('pushJellyfinPassword'), username: z.string(), newPassword: z.string() }),
@@ -304,6 +312,21 @@ export const MaintenanceResult = z.discriminatedUnion('action', [
   z.object({ class: z.literal('maintenance'), action: z.literal('moveLibraryFile'), path: z.string(), sidecars: z.array(Sidecar).optional() }),
   // Videos found under the roots, and how many of them no `files` row holds.
   z.object({ class: z.literal('maintenance'), action: z.literal('scanLibrary'), found: z.number(), untracked: z.number() }),
+  z.object({
+    class: z.literal('maintenance'),
+    action: z.literal('checkLibraryFiles'),
+    checked: z.number(),
+    missing: z.number(),
+    roots: z.array(
+      z.object({
+        libraryId: zid('libraries'),
+        state: LibraryRootState,
+        checkedWhenMostMissing: z.number().optional(),
+        missingWhenMostMissing: z.number().optional(),
+        goneFolders: z.array(z.string()).optional(),
+      }),
+    ),
+  }),
   // The sync's counts; `definitions.finishSync` already wrote the status.
   z.object({
     class: z.literal('maintenance'),

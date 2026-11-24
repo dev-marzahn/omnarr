@@ -21,7 +21,7 @@ import { librarySameDevice } from '../jobs/worker';
 import { adminAction, adminMutation, adminQuery } from '../lib/functions';
 import { librarySizeOf } from '../library/size';
 import { settingsRow } from '../setup/settings';
-import { availableUpdate } from '../updates';
+import { updateCheckOf } from '../updates';
 import { jellyfinStatusOf } from './jellyfin';
 
 /** The System page's VPN line: the reading without its check time. */
@@ -202,7 +202,6 @@ export async function systemStatusOf(ctx: QueryCtx): Promise<SystemStatus> {
     jobCounts: await jobCountsOf(ctx),
     jellyfin: await jellyfinStatusOf(ctx),
     ...(supportBundle ? { supportBundle } : {}),
-    // "omnarr <latest> is available".
-    release: { version, ...availableUpdate(version, (await settingsRow(ctx))?.updateCheck) },
+    release: { version, check: updateCheckOf(version, (await settingsRow(ctx))?.updateCheck) },
   };
 }

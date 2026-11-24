@@ -20,8 +20,9 @@ const props = withDefaults(
     workerConnected: boolean;
     /** A backup server: its id (the form makes a new one's) and, once saved, what is stored. */
     backup?: { id: string; server?: UsenetBackupServerDetail };
+    saveLeads?: boolean;
   }>(),
-  { backup: undefined },
+  { backup: undefined, saveLeads: true },
 );
 const emit = defineEmits<{ saved: []; unsaved: [boolean] }>();
 
@@ -182,7 +183,14 @@ const usage = computed(() => usageText(props.backup?.server?.limit, props.backup
         {{ configStateText(usenet, now) }}
       </p>
       <slot name="actions" />
-      <UButton type="submit" label="Save" :loading="busy" :disabled="!canSave" />
+      <UButton
+        type="submit"
+        :color="saveLeads ? 'primary' : 'neutral'"
+        :variant="saveLeads ? 'solid' : 'outline'"
+        label="Save"
+        :loading="busy"
+        :disabled="!canSave"
+      />
     </div>
   </UForm>
 </template>

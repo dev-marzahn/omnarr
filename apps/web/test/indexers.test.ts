@@ -13,6 +13,7 @@ import {
   pacingText,
   rateLimitText,
   removeConfirm,
+  siteName,
   SITES,
   siteTestText,
 } from '../lib/indexers';
@@ -129,6 +130,19 @@ describe("the form's Caps and Health blocks", () => {
       { label: 'Errors (24 h)', value: '0' },
     ]);
   });
+
+  test('Health: a count of one is singular', () => {
+    const at = Date.UTC(2026, 10, 17, 16, 58);
+    const health = {
+      status: 'ok' as const,
+      lastSearch: { at, status: 'ok' as const, count: 1 },
+      lastRss: { at: Date.UTC(2026, 10, 17, 16, 45), newItems: 1, matched: 1 },
+    };
+    expect(healthBlock(detail({ health }), time).slice(0, 2)).toEqual([
+      { label: 'Last search', value: '16:58 · ok · 1 result' },
+      { label: 'Last RSS', value: '16:45 · 1 new item, 1 matched' },
+    ]);
+  });
 });
 
 describe('removeConfirm: the confirm before an indexer is removed names it', () => {
@@ -181,6 +195,16 @@ describe('site indexers', () => {
 
   test('a passed site test says what the site searches, and its categories', () => {
     expect(siteTestText('nyaa')).toEqual({ title: 'Nyaa: anime, search by title', categories: ['Anime (series)', 'Anime (movies)'] });
+  });
+
+  test.each([
+    ['an empty Name takes the site', '', '', 'Nyaa', 'Nyaa'],
+    ['switching to "Other site" clears the Name the form filled', 'Nyaa', 'Nyaa', '', ''],
+    ['picking Nyaa again replaces a filled definition name', 'Lantern', 'Lantern', 'Nyaa', 'Nyaa'],
+    ['a typed Name stays on "Other site"', 'My anime', 'Nyaa', '', 'My anime'],
+    ['a typed Name stays on another site', 'My anime', '', 'Nyaa', 'My anime'],
+  ])('Name when the site changes: %s', (_, name, filled, next, expected) => {
+    expect(siteName(name, filled, next)).toBe(expected);
   });
 });
 

@@ -49,6 +49,7 @@ describe('limitsFrom: the test-only overrides in OMNARR_TEST_LIMITS', () => {
       setupLockMs: 15 * MINUTE,
       nyaaIntervalMs: 5 * SECOND,
       definitionMinIntervalMs: 2 * SECOND,
+      fileMissingConfirmMs: 60 * 60 * SECOND,
     });
   });
 

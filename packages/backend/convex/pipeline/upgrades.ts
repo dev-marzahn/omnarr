@@ -12,6 +12,7 @@ import { z } from 'zod';
 import { internal } from '../_generated/api';
 import type { Doc, Id } from '../_generated/dataModel';
 import { internalMutation, type MutationCtx, type QueryCtx } from '../_generated/server';
+import { isMissing } from '../lib/derivedState';
 import { targetOf } from '../playback/target';
 
 const DAY = 86_400_000;
@@ -41,7 +42,7 @@ export async function playablePrimary(ctx: QueryCtx, unitId: Id<'units'>): Promi
   for (const publication of publications) {
     if (publication.state !== 'visible' && !(publication.state === 'pending' && publication.targetItemRef !== undefined)) continue;
     const version = await ctx.db.get(publication.fileVersionId);
-    if (version?.kind === 'primary') return version;
+    if (version?.kind === 'primary' && !(await isMissing(ctx, version.fileId))) return version;
   }
   return null;
 }

@@ -118,6 +118,18 @@ export const IndexerStatusRow = z.object({ indexerId: zid('indexers'), name: z.s
 export const LibrarySize = z.object({ totalBytes: z.number(), seriesBytes: z.number(), moviesBytes: z.number(), measuredAt: z.number() }).strict();
 export type LibrarySize = z.infer<typeof LibrarySize>;
 
+export const NewerRelease = z.object({ latest: z.string(), releaseUrl: z.string() }).strict();
+export type NewerRelease = z.infer<typeof NewerRelease>;
+
+export const UpdateCheck = z.discriminatedUnion('state', [
+  z.object({ state: z.literal('off') }).strict(),
+  z.object({ state: z.literal('notYet') }).strict(),
+  z.object({ state: z.literal('upToDate'), checkedAt: z.number() }).strict(),
+  z.object({ state: z.literal('available'), newer: NewerRelease, checkedAt: z.number() }).strict(),
+  z.object({ state: z.literal('failed'), failedAt: z.number(), lastCheckedAt: z.number().optional(), knownNewer: NewerRelease.optional() }).strict(),
+]);
+export type UpdateCheck = z.infer<typeof UpdateCheck>;
+
 /** `system.status`. */
 export const SystemStatus = z
   .object({
@@ -130,11 +142,7 @@ export const SystemStatus = z
     supportBundle: SupportBundle.optional(),
     /** Jellyfin's setup and version, without the key. */
     jellyfin: JellyfinStatus,
-    /**
-     * The release the deployment last applied (`CONVEX_RELEASE_VERSION`), and
-     * from the daily update check a newer release with its page.
-     */
-    release: z.object({ version: z.string(), latest: z.string().optional(), releaseUrl: z.string().optional() }).strict(),
+    release: z.object({ version: z.string(), check: UpdateCheck }).strict(),
   })
   .strict();
 export type SystemStatus = z.infer<typeof SystemStatus>;

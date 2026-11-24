@@ -42,7 +42,7 @@ import {
   DeviceId,
   DownloadState,
   FileVersionKind,
-  PlayMethod,
+  StoredPlayMethod,
   RenditionReason,
   Sidecar,
   TargetFormat,
@@ -186,6 +186,8 @@ export default defineSchema({
     sidecars: v.optional(v.array(zodToConvex(Sidecar))),
     // A scanned file, or a prepared copy of one: never renamed.
     keepsName: v.optional(v.boolean()),
+    missingSeenAt: v.optional(v.number()),
+    missingSince: v.optional(v.number()),
   })
     .index('by_path', ['path'])
     .index('by_inode', ['inode']),
@@ -692,7 +694,7 @@ export default defineSchema({
     client: v.string(),
     itemRef: v.string(),
     unitId: v.optional(v.id('units')),
-    method: zodToConvex(PlayMethod),
+    method: zodToConvex(StoredPlayMethod),
     reasons: v.array(zodToConvex(TranscodeReason)),
     rawReasons: v.array(v.string()),
     open: v.boolean(),

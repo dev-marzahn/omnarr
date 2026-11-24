@@ -38,6 +38,9 @@ import {
   type ResolveFilesResponse,
   type ScanRecordProbesRequest,
   type ScanReportBatchRequest,
+  type FileCheckPageRequest,
+  type FileCheckPageResponse,
+  type FileCheckReportRequest,
   type SupportBundleData,
   type WorkerErrorCode,
 } from '@omnarr/contracts';
@@ -74,6 +77,8 @@ export interface WorkerBackend {
   scanReportBatch(request: ScanReportBatchRequest): Promise<string[]>;
   /** `scan.recordProbes`: the untracked videos with their probes. Fenced on the lease. */
   scanRecordProbes(request: ScanRecordProbesRequest): Promise<void>;
+  fileCheckPage(request: FileCheckPageRequest): Promise<FileCheckPageResponse>;
+  fileCheckReport(request: FileCheckReportRequest): Promise<void>;
   /** `worker.artifactUploadUrl`: where a job POSTs its log; the upload answers with `{ storageId }`. Fenced on the lease. */
   artifactUploadUrl(request: Lease): Promise<{ uploadUrl: string }>;
   /** `worker.bundleData`: the support bundle's DTOs, for a leased `buildSupportBundle` job. */
@@ -187,6 +192,8 @@ export function convexBackend(options: {
     resolveFiles: (request) => client.query(api.jobs.imports.resolveFiles, { ...call, ...request }),
     scanReportBatch: (request) => client.mutation(api.scan.report.reportBatch, { ...call, ...request }),
     scanRecordProbes: async (request) => void (await client.mutation(api.scan.report.recordProbes, { ...call, ...request })),
+    fileCheckPage: (request) => client.mutation(api.library.missingFiles.page, { ...call, ...request }),
+    fileCheckReport: async (request) => void (await client.mutation(api.library.missingFiles.report, { ...call, ...request })),
     artifactUploadUrl: async (request) => {
       const { uploadUrl } = await client.mutation(api.jobs.worker.artifactUploadUrl, { ...call, ...request });
       return { uploadUrl: uploadUrlFor(uploadUrl, options.url) };

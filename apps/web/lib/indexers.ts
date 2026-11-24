@@ -23,6 +23,12 @@ export const SITES = [{ kind: 'nyaa', label: 'Nyaa', description: 'Anime, search
   description: string;
 }[];
 
+/**
+ * The Name after the picked site changes: an empty Name, or one the form filled in itself, becomes the new site's
+ * name (empty when there is none yet, as for "Other site" before a definition is picked); a typed Name stays.
+ */
+export const siteName = (name: string, filled: string, next: string): string => (name === '' || name === filled ? next : name);
+
 /** What a passed site test shows: what the site searches and its categories. */
 export const siteTestText = (kind: (typeof SITES)[number]['kind']) =>
   ({ nyaa: { title: 'Nyaa: anime, search by title', categories: ['Anime (series)', 'Anime (movies)'] } })[kind];
@@ -157,15 +163,17 @@ const CALL_STATUS: Record<NonNullable<IndexerHealth['lastSearch']>['status'], st
   error: 'failed',
 };
 
+const count = (n: number, one: string): string => `${n} ${n === 1 ? one : `${one}s`}`;
+
 /** The form's Health block: the last search, the last RSS fetch and the day's errors. */
 export function healthBlock(detail: Pick<IndexerDetail, 'health' | 'errors24h'>, formatTime: (ms: number) => string): InfoRow[] {
   const { lastSearch, lastRss } = detail.health;
   return [
     {
       label: 'Last search',
-      value: lastSearch ? `${formatTime(lastSearch.at)} · ${CALL_STATUS[lastSearch.status]} · ${lastSearch.count} results` : 'None yet',
+      value: lastSearch ? `${formatTime(lastSearch.at)} · ${CALL_STATUS[lastSearch.status]} · ${count(lastSearch.count, 'result')}` : 'None yet',
     },
-    { label: 'Last RSS', value: lastRss ? `${formatTime(lastRss.at)} · ${lastRss.newItems} new items, ${lastRss.matched} matched` : 'None yet' },
+    { label: 'Last RSS', value: lastRss ? `${formatTime(lastRss.at)} · ${count(lastRss.newItems, 'new item')}, ${lastRss.matched} matched` : 'None yet' },
     { label: 'Errors (24 h)', value: String(detail.errors24h) },
   ];
 }

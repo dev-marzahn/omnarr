@@ -24,14 +24,18 @@ import {
   librarySizeView,
   setupStepRows,
   storageGroups,
+  storageNotes,
   storageWarnings,
   supportBundleLine,
-  updateNote,
+  updateCheckLines,
+  type UpdateCheckLine,
   videoEncoders,
   vpnLine,
   workerLine,
 } from '~/lib/system';
 import { rewriteStorageUrl } from '~/lib/urls';
+
+const UPDATE_TONE_CLASS: Record<UpdateCheckLine['tone'], string> = { primary: 'text-primary', warning: 'text-warning', muted: 'text-muted' };
 
 const urls = useUrls();
 const { data, error } = useQuery(api.api.system.status, {});
@@ -162,10 +166,16 @@ const card = { header: 'py-3 sm:py-3', body: 'p-0 sm:p-0' };
               <p class="font-medium text-highlighted">omnarr {{ data.release.version === '0.0.0-dev' ? 'development build' : data.release.version }}</p>
               <p class="text-xs text-dimmed">Worker protocol v{{ worker?.expectedVersion ?? '—' }}</p>
             </div>
-            <ULink v-if="updateNote(data.release)" :to="updateNote(data.release)!.url" target="_blank" class="text-sm font-medium text-primary">
-              <UIcon name="i-lucide-arrow-up-circle" class="align-[-2px]" />
-              {{ updateNote(data.release)!.text }}
-            </ULink>
+            <template v-for="line in updateCheckLines(data.release)" :key="line.text">
+              <ULink v-if="line.url" :to="line.url" target="_blank" class="text-sm font-medium" :class="UPDATE_TONE_CLASS[line.tone]">
+                <UIcon :name="line.icon" class="align-[-2px]" />
+                {{ line.text }}
+              </ULink>
+              <p v-else class="text-sm" :class="UPDATE_TONE_CLASS[line.tone]">
+                <UIcon :name="line.icon" class="align-[-2px]" />
+                {{ line.text }}
+              </p>
+            </template>
             <p class="ms-auto text-xs text-muted">
               <UIcon name="i-lucide-package" class="align-[-2px]" />
               {{ supportBundleLine(bundle) ? `Support bundle: ${supportBundleLine(bundle)}` : 'No support bundle yet' }}
@@ -334,8 +344,8 @@ const card = { header: 'py-3 sm:py-3', body: 'p-0 sm:p-0' };
                   <span v-if="!row.writable" class="text-xs text-error">not writable</span>
                   <span class="tabular-nums text-highlighted">{{ row.free }}</span>
                 </li>
-                <li v-if="data.storage.librarySameDevice && data.storage.downloadsSameDevice" class="px-4 py-3 sm:px-6 text-xs text-muted">
-                  One filesystem, so the areas share free space.
+                <li v-if="storageNotes(data.storage).length > 0" class="px-4 py-3 sm:px-6 text-xs text-muted">
+                  <p v-for="note in storageNotes(data.storage)" :key="note">{{ note }}</p>
                 </li>
                 <li v-for="row in library.rows" :key="row.label" class="flex items-center gap-3 px-4 py-3 sm:px-6" :class="row.part && 'ps-8 sm:ps-10'">
                   <span class="flex-1 min-w-0" :class="row.part && 'text-muted'">{{ row.label }}</span>

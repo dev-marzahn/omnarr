@@ -122,6 +122,21 @@ describe('import', () => {
     expect(await stagingLeft()).toEqual([]);
   });
 
+  test('the library file stays whole when the download is deleted with its data after seeding', async () => {
+    const dir = await download({ [WEBDL_RELEASE]: 3000 });
+    backend.resolved = { [WEBDL_RELEASE]: ['u2'] };
+    await handler()(job(dir, [e(2, 'Pilot')]), ctx);
+    const path = join(season(1), WEBDL_LIBRARY_NAME);
+    const before = await readFile(path);
+
+    await rm(dir, { recursive: true, force: true });
+
+    const info = await stat(path);
+    expect(info.nlink).toBe(1);
+    expect(info.size).toBe(3000);
+    expect(await readFile(path)).toEqual(before);
+  });
+
   test("an upgrade file that doesn't fit the target is held under staging/held/<jobId>/, never placed beside the primary", async () => {
     const dir = await download({ [WEBDL_RELEASE]: 3000 });
     backend.resolved = { [WEBDL_RELEASE]: ['u2'] };
@@ -325,6 +340,21 @@ describe('import', () => {
       expect(await readFile(file!.path)).toEqual(await readFile(join(dir, WEBDL_RELEASE)));
       expect(await snapshot(layout.downloads)).toEqual(before);
       expect(await stagingLeft()).toEqual([]);
+    });
+
+    test('a copied library file stays whole when the download is deleted with its data after seeding', async () => {
+      const dir = await download({ [WEBDL_RELEASE]: 1000 });
+      backend.resolved = { [WEBDL_RELEASE]: ['u2'] };
+      const exdev = async () => {
+        throw Object.assign(new Error('cross-device link'), { code: 'EXDEV' });
+      };
+      const [file] = filesOf(await handler({ link: exdev, freeBytes: async () => 2 * 1024 ** 3 })(job(dir, [e(2, 'Pilot')]), ctx));
+      const before = await readFile(file!.path);
+
+      await rm(dir, { recursive: true, force: true });
+
+      expect((await stat(file!.path)).size).toBe(1000);
+      expect(await readFile(file!.path)).toEqual(before);
     });
 
     test('a re-run of a copied import finds its earlier copy at the name instead of adding " (1)"', async () => {

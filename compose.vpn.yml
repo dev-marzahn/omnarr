@@ -3,7 +3,9 @@
 #
 #   COMPOSE_FILE=compose.yml:compose.vpn.yml
 #
-# then run `docker compose up -d`. Gluetun carries qBittorrent's traffic, and
+# then run `docker compose up -d`. compose.vpn.merged.yml is the two files in
+# one, for a front end that ignores COMPOSE_FILE; regenerate it after an edit
+# here (node scripts/merge-vpn-compose.ts). Gluetun carries qBittorrent's traffic, and
 # qBittorrent publishes no port. To recreate gluetun, recreate qBittorrent with
 # it, or qBittorrent keeps a dead network:
 #

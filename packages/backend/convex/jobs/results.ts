@@ -25,6 +25,7 @@ import { appendEvent } from '../lib/events';
 import { workerError } from '../lib/functions';
 import { raiseIssue, resolveIssuesForUnit, resolveSystemIssue } from '../lib/issues';
 import { transition, unitsOfGrab } from '../lib/stateMachine';
+import { checked, enqueueFileCheck, resolveFileMissingOnceAFileOfItPlays } from '../library/missingFiles';
 import { moved, renamed } from '../library/naming';
 import { metadataPool } from '../metadata/pool';
 import { prepared, prepareEnded, retireOldVersions } from '../pipeline/preparation';
@@ -144,9 +145,16 @@ const FINAL_GRAB = new Set(['done', 'failed', 'cancelled']);
  * (`seedingDone`), or qBittorrent lost its files or the torrent
  * (`seedingLost`). Only once its Grab has ended, so import never loses its
  * source; while the Grab runs, the report is ignored and comes again on the
- * next pass. Then the torrent leaves the client, with its data when the goal
- * was met, under one key, so a repeated report is harmless. No unit-scope
- * Issue: every Unit already has its file. A deleted Work changes nothing here.
+ * next pass. Then the torrent leaves the client under one key, so a
+ * repeated report is harmless. Its data goes with it when the goal was met,
+ * or when its Grab is `done`: a lost torrent in error can still have every
+ * file on disk, and once it leaves the client nothing would remove them,
+ * while a done Grab's library keeps its own hard link or copy. A lost
+ * torrent of a failed or cancelled Grab keeps its data: a Grab that failed
+ * on a system error (a share that dropped, which qBittorrent then reports as
+ * missing files) was never imported, and "Retry this release" imports it
+ * from there. No unit-scope Issue: every Unit already has its file. A
+ * deleted Work changes nothing here.
  */
 export async function seedingEnded(
   ctx: MutationCtx,
@@ -175,7 +183,7 @@ export async function seedingEnded(
       downloadId: download._id,
       clientKind: download.clientKind,
       clientRef: download.clientRef,
-      deleteData: met,
+      deleteData: met || grab?.state === 'done',
       correlationTag: download.correlationTag,
     },
     idempotencyKey,
@@ -411,6 +419,7 @@ export async function published(ctx: MutationCtx, job: Doc<'jobs'>, result: Resu
     await transition(ctx, 'publication', publicationId, 'visible', { kind: 'stageFinished', message: 'Visible in Jellyfin.' });
     // A Grab's file, once Jellyfin lists it, replaces the Unit's earlier files that never played.
     if (job.grabId && version?.kind === 'primary') await retireNeverPlayed(ctx, publication.unitId, version.fileId);
+    if (version?.kind === 'primary' || version?.kind === 'staged') await resolveFileMissingOnceAFileOfItPlays(ctx, publication.unitId, version.fileId);
     await resolveIssuesForUnit(ctx, publication.unitId, job.grabId ? ['jellyfinMisread'] : ['jellyfinUnavailable', 'jellyfinMisread']);
   }
   await recomputeUnits(ctx, units);
@@ -452,6 +461,9 @@ export async function maintenance(ctx: MutationCtx, job: Doc<'jobs'>, result: Re
     case 'scanLibrary':
       if (result.action === 'scanLibrary') await scanRead(ctx, job.payload.scanRunId, result);
       return;
+    case 'checkLibraryFiles':
+      if (result.action === 'checkLibraryFiles') await checked(ctx, job.payload, result);
+      return;
   }
 }
 
@@ -461,6 +473,7 @@ async function scanRead(ctx: MutationCtx, scanRunId: Id<'scanRuns'>, result: Ext
   if (run?.state !== 'reading') return;
   await ctx.db.patch(scanRunId, { state: 'matching', counts: { ...run.counts, read: result.found, tracked: result.found - result.untracked } });
   await metadataPool.enqueueAction(ctx, internal.scan.match.run, { scanRunId });
+  await enqueueFileCheck(ctx);
 }
 
 /** Dispatches a completed job's result to its class's handler; the job's event is sent after it. */

@@ -5,11 +5,21 @@
 #   2. Test    the stackUpgrade e2e from the previous GitHub release to these
 #              digests; skipped when no release exists yet. A failure stops
 #              the release before any tag points at the images.
-#   3. Pin     tag the images, write their digests into compose.yml, commit
-#              "Release <version>" on top of main and push only the tag
-#              v<version>: main's ruleset refuses a direct push, so the
-#              release commit lives on its tag, not on main
-#   4. Release the GitHub release with compose.yml, compose.vpn.yml and .env.example
+#   3. Pin     tag the images, write their digests into compose.yml, write
+#              compose.vpn.merged.yml, commit "Release <version>" on top of
+#              the commit the release started from, and push it at once to
+#              main, to the `release` branch (not for a pre-release) and as
+#              the tag v<version>
+#   4. Release the GitHub release with compose.yml, compose.vpn.yml,
+#              compose.vpn.merged.yml and .env.example
+#
+# It runs only on main. The push uses the deploy key RELEASE_DEPLOY_KEY, a
+# secret of the `release` environment, which only main may deploy to; main's
+# ruleset lets the key past its required checks. A push with the workflow
+# token wouldn't be, and would start no CI on main. `release` always holds the
+# newest release's commit, for an install that follows a branch
+# (docs/install.md, Coolify); a pre-release (a version with `-`) leaves it.
+# Setting up the key, the environment and the rulesets: CONTRIBUTING.md, Releases.
 #
 # The built-in TMDB token is the repository secret TMDB_TOKEN, passed to the
 # backend image as the `tmdb_token` build secret.
@@ -35,8 +45,22 @@ env:
   VERSION: ${{ inputs.version }}
 
 jobs:
+  # Before any image is built: the release can push what it pins.
+  preflight:
+    name: On main, with the deploy key
+    runs-on: ubuntu-latest
+    # The environment holds the key and admits only main.
+    environment: release
+    steps:
+      - env:
+          HAS_DEPLOY_KEY: ${{ secrets.RELEASE_DEPLOY_KEY != '' }}
+        run: |
+          if [ "$GITHUB_REF" != refs/heads/main ]; then echo "A release runs on main, not $GITHUB_REF."; exit 1; fi
+          if [ "$HAS_DEPLOY_KEY" != true ]; then echo "The release environment's secret RELEASE_DEPLOY_KEY is missing (CONTRIBUTING.md, Releases)."; exit 1; fi
+
   build:
     name: Build ${{ matrix.image }}
+    needs: preflight
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -115,12 +139,17 @@ jobs:
     name: Pin and release
     needs: [build, test]
     runs-on: ubuntu-latest
+    environment: release
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: main
+          # The commit the images were built from, not main's newest: the release
+          # pins what it built and tested.
+          ref: ${{ github.sha }}
           # The previous release's tag, for the notes' changed pins.
           fetch-depth: 0
+          # Pushes go out with the deploy key (see the top).
+          ssh-key: ${{ secrets.RELEASE_DEPLOY_KEY }}
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
@@ -144,13 +173,15 @@ jobs:
           docker buildx imagetools create -t "$REGISTRY/omnarr-worker:$VERSION" "$REGISTRY/omnarr-worker@$WORKER"
           docker buildx imagetools create -t "$REGISTRY/omnarr-web:$VERSION" "$REGISTRY/omnarr-web@$WEB"
           printf '{"omnarr-backend":"%s","omnarr-worker":"%s","omnarr-web":"%s"}\n' "$BACKEND" "$WORKER" "$WEB" > "$RUNNER_TEMP/digests.json"
-      - name: Pin compose.yml
+      - name: Pin compose.yml and compose.vpn.merged.yml
         run: |
           node scripts/pin-images.ts --version "$VERSION" --digests "$RUNNER_TEMP/digests.json"
+          node scripts/merge-vpn-compose.ts
           node scripts/check-ports.ts
-      # Only the tag is pushed: main's ruleset admits nothing but merged pull
-      # requests, and tags have no rules. A re-run whose tag is already on
-      # origin releases that tag's commit instead of making a second one.
+      # One atomic push: main, release and the tag move together or not at all.
+      # It fails if main moved since the release started (a merge meanwhile);
+      # start a new run then. A re-run whose tag is already on origin
+      # releases that tag's commit instead of making a second one.
       - name: Commit and tag
         run: |
           if git ls-remote --exit-code --tags origin "refs/tags/v$VERSION" > /dev/null; then
@@ -164,7 +195,13 @@ jobs:
           git switch --detach
           git commit -am "Release $VERSION"
           git tag "v$VERSION"
-          git push origin "refs/tags/v$VERSION"
+          # A pre-release leaves `release` at the newest release.
+          refs=(HEAD:refs/heads/main "refs/tags/v$VERSION")
+          case "$VERSION" in *-*) ;; *) refs+=(HEAD:refs/heads/release) ;; esac
+          if ! git push --atomic origin "${refs[@]}"; then
+            echo "The push was refused: main moved since this release started, or the deploy key can't pass the rulesets. Nothing was pushed. Start a new run of the workflow (gh workflow run release.yml); re-running this one would build on the same old commit and be refused again."
+            exit 1
+          fi
       - name: Create the GitHub release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -172,8 +209,9 @@ jobs:
         run: |
           prerelease=""
           case "$VERSION" in *-*) prerelease="--prerelease" ;; esac
-          # The newest GitHub release before this one: its tag's commit is
-          # off main, so git describe from HEAD wouldn't find it.
+          # The newest GitHub release before this one: releases before the
+          # release commit reached main have their commit off main, so git
+          # describe from HEAD wouldn't find them.
           previous=$(gh release list --exclude-drafts --limit 100 --json tagName --jq '.[].tagName' | grep -Fvx "v$VERSION" | head -n 1 || true)
           notes="$RUNNER_TEMP/notes.md"
           : > "$notes"
@@ -192,4 +230,4 @@ jobs:
             echo; echo "<details><summary>The worker image's Debian packages</summary>"; echo; echo '```'
             docker run --rm --entrypoint cat "$image" /licenses/packages.txt; echo '```'; echo "</details>"; } >> "$notes"
           cp .env.example "$RUNNER_TEMP/env.example"
-          gh release create "v$VERSION" compose.yml compose.vpn.yml "$RUNNER_TEMP/env.example" $prerelease --title "omnarr $VERSION" --notes-file "$RUNNER_TEMP/notes.md"
+          gh release create "v$VERSION" compose.yml compose.vpn.yml compose.vpn.merged.yml "$RUNNER_TEMP/env.example" $prerelease --title "omnarr $VERSION" --notes-file "$RUNNER_TEMP/notes.md"

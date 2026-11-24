@@ -129,6 +129,12 @@ describe('fixConfirm: the fixes that ask before they run', () => {
     expect(confirm.note).toBe('The failed releases stay blocklisted. The Issue moves to In progress and closes when the new run succeeds.');
   });
 
+  test('on a missing file it is a plain search again, with no blocklist', () => {
+    const confirm = fixConfirm('tryNextBest', row({ failureCode: 'fileMissing' }))!;
+    expect(confirm).toMatchObject({ title: 'Search again?', confirm: 'Search again' });
+    expect(confirm.description).toBe('omnarr searches your indexers and grabs the best release for S02E09. That starts a new run.');
+  });
+
   test('Retry this release names it; Remove from client names the items', () => {
     expect(fixConfirm('retryRelease', row({ release: 'The.Long.Harbor.S02E09-GRPA' }))!.description).toContain('The.Long.Harbor.S02E09-GRPA');
     const orphan = row({ scope: 'system', unit: undefined, failureCode: 'orphanClientItem', detail: 'nzbget 41: Stray.Show.S01E01' });
