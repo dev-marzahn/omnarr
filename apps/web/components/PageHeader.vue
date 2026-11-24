@@ -55,73 +55,73 @@ const { t } = useLocale();
 
 <template>
   <WorkerBanner />
-  <UDashboardNavbar :style="PINNED_TOGGLE_VARS" :ui="{ root: [NAVBAR_BOX, 'relative'], title: 'text-base', right: 'gap-2' }">
-    <template #toggle="{ sidebarCollapsed }">
-      <UDashboardSidebarToggle class="-ms-(--toggle-icon-nudge)" />
-      <UTooltip :text="t(sidebarCollapsed?.value ? 'dashboardSidebarCollapse.expand' : 'dashboardSidebarCollapse.collapse')">
-        <UDashboardSidebarCollapse class="-ms-(--toggle-icon-nudge) lg:absolute lg:start-(--desktop-gutter) lg:top-1/2 lg:-translate-y-1/2" />
-      </UTooltip>
-    </template>
-    <template #title>
-      <template v-if="breadcrumb?.length">
-        <UBreadcrumb :items="breadcrumb" class="hidden sm:flex min-w-0" :ui="{ link: 'text-sm font-normal', list: 'min-w-0' }" />
-        <NuxtLink v-if="back" :to="back.to" class="sm:hidden inline-flex items-center gap-1 text-sm font-normal text-muted hover:text-default min-w-0">
-          <UIcon name="i-lucide-chevron-left" class="size-4 shrink-0" />
-          <span class="truncate">{{ back.label }}</span>
-        </NuxtLink>
+  <div class="shrink-0 overflow-hidden scrollbar-gutter-stable">
+    <UDashboardNavbar :style="PINNED_TOGGLE_VARS" :ui="{ root: [NAVBAR_BOX, 'relative'], title: 'text-base', right: 'gap-2' }">
+      <template #toggle="{ sidebarCollapsed }">
+        <UDashboardSidebarToggle class="-ms-(--toggle-icon-nudge)" />
+        <UTooltip :text="t(sidebarCollapsed?.value ? 'dashboardSidebarCollapse.expand' : 'dashboardSidebarCollapse.collapse')">
+          <UDashboardSidebarCollapse class="-ms-(--toggle-icon-nudge) lg:absolute lg:start-(--desktop-gutter) lg:top-1/2 lg:-translate-y-1/2" />
+        </UTooltip>
       </template>
-      <span v-else class="truncate">{{ title }}</span>
-    </template>
+      <template #title>
+        <template v-if="breadcrumb?.length">
+          <UBreadcrumb :items="breadcrumb" class="hidden sm:flex min-w-0" :ui="{ link: 'text-sm font-normal', list: 'min-w-0' }" />
+          <NuxtLink v-if="back" :to="back.to" class="sm:hidden inline-flex items-center gap-1 text-sm font-normal text-muted hover:text-default min-w-0">
+            <UIcon name="i-lucide-chevron-left" class="size-4 shrink-0" />
+            <span class="truncate">{{ back.label }}</span>
+          </NuxtLink>
+        </template>
+        <span v-else class="truncate">{{ title }}</span>
+      </template>
 
-    <template #right>
-      <slot name="right" />
-      <!-- Desktop: every action with its label, then "…". -->
-      <div v-if="actions.length || menu?.length" class="hidden sm:flex items-center gap-2">
-        <UButton
-          v-for="action in actions"
-          :key="action.label"
-          :icon="action.icon"
-          :label="action.label"
-          :color="action.primary ? 'primary' : 'neutral'"
-          :variant="action.primary ? 'solid' : 'outline'"
-          :to="action.to"
-          :target="action.target"
-          :loading="action.loading"
-          :disabled="action.disabled"
-          @click="action.onClick?.()"
-        />
-        <UDropdownMenu v-if="menu?.length" :items="menu" :content="{ align: 'end' }">
-          <UButton icon="i-lucide-ellipsis" color="neutral" variant="outline" square aria-label="More actions" />
-        </UDropdownMenu>
-      </div>
-      <!-- Phone: two icon buttons, the rest in "…". -->
-      <div v-if="actions.length || menu?.length" class="sm:hidden flex items-center gap-2">
-        <UTooltip v-for="action in actions.slice(0, 2)" :key="action.label" :text="action.label">
+      <template #right>
+        <slot name="right" />
+        <div v-if="actions.length || menu?.length" class="hidden sm:flex items-center gap-2">
           <UButton
+            v-for="action in actions"
+            :key="action.label"
             :icon="action.icon"
-            :aria-label="action.label"
+            :label="action.label"
             :color="action.primary ? 'primary' : 'neutral'"
             :variant="action.primary ? 'solid' : 'outline'"
-            square
             :to="action.to"
             :target="action.target"
             :loading="action.loading"
             :disabled="action.disabled"
             @click="action.onClick?.()"
           />
-        </UTooltip>
-        <UDropdownMenu v-if="phoneMenu.length" :items="phoneMenu" :content="{ align: 'end' }">
-          <UButton icon="i-lucide-ellipsis" color="neutral" variant="outline" square aria-label="More actions" />
-        </UDropdownMenu>
-      </div>
-    </template>
-  </UDashboardNavbar>
-  <div v-if="slots.tabs" :class="[BOX, 'border-b border-default']">
-    <slot name="tabs" />
+          <UDropdownMenu v-if="menu?.length" :items="menu" :content="{ align: 'end' }">
+            <UButton icon="i-lucide-ellipsis" color="neutral" variant="outline" square aria-label="More actions" />
+          </UDropdownMenu>
+        </div>
+        <div v-if="actions.length || menu?.length" class="sm:hidden flex items-center gap-2">
+          <UTooltip v-for="action in actions.slice(0, 2)" :key="action.label" :text="action.label">
+            <UButton
+              :icon="action.icon"
+              :aria-label="action.label"
+              :color="action.primary ? 'primary' : 'neutral'"
+              :variant="action.primary ? 'solid' : 'outline'"
+              square
+              :to="action.to"
+              :target="action.target"
+              :loading="action.loading"
+              :disabled="action.disabled"
+              @click="action.onClick?.()"
+            />
+          </UTooltip>
+          <UDropdownMenu v-if="phoneMenu.length" :items="phoneMenu" :content="{ align: 'end' }">
+            <UButton icon="i-lucide-ellipsis" color="neutral" variant="outline" square aria-label="More actions" />
+          </UDropdownMenu>
+        </div>
+      </template>
+    </UDashboardNavbar>
+    <div v-if="slots.tabs" :class="[BOX, 'border-b border-default']">
+      <slot name="tabs" />
+    </div>
+    <UDashboardToolbar v-if="slots.toolbar" :ui="{ root: `${BOX} py-2 overflow-visible`, left: 'flex-1 min-w-0 flex-wrap gap-2' }">
+      <template #left>
+        <slot name="toolbar" />
+      </template>
+    </UDashboardToolbar>
   </div>
-  <UDashboardToolbar v-if="slots.toolbar" :ui="{ root: `${BOX} py-2 overflow-visible`, left: 'flex-1 min-w-0 flex-wrap gap-2' }">
-    <template #left>
-      <slot name="toolbar" />
-    </template>
-  </UDashboardToolbar>
 </template>
