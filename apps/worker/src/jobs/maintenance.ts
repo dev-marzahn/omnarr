@@ -109,6 +109,11 @@ async function removeDownloadFolder(layout: DataLayout, contentPath: string): Pr
   return true;
 }
 
+async function taggedItemRef(client: DownloadClient, correlationTag: string | undefined, signal: AbortSignal): Promise<string | undefined> {
+  if (correlationTag === undefined) throw new JobFailure('pipelineError', 'The removal names neither a client item nor a tag.');
+  return (await client.findByTag(correlationTag, signal))?.clientRef;
+}
+
 type Rename = { from: string; to: string };
 
 /**
@@ -178,8 +183,10 @@ export function maintenanceHandler(deps: MaintenanceDeps): JobHandler {
       case 'removeDownload': {
         const client = deps.clients[payload.clientKind];
         if (!client) throw new JobFailure('clientUnreachable', `No ${payload.clientKind} client is configured.`);
+        const clientRef = payload.clientRef ?? (await taggedItemRef(client, payload.correlationTag, signal));
+        if (clientRef === undefined) return { class: 'maintenance', action: 'removeDownload', removed: false };
         const result = await deps.runtime.withClientLock(payload.clientKind, () =>
-          client.remove(payload.clientRef, payload.correlationTag, payload.deleteData, signal),
+          client.remove(clientRef, payload.correlationTag, payload.deleteData, signal),
         );
         // NZBGet keeps a finished download's files; qBittorrent deletes a torrent's own.
         if (payload.deleteData && payload.contentPath && payload.clientKind === 'nzbget') await removeDownloadFolder(deps.layout, payload.contentPath);
