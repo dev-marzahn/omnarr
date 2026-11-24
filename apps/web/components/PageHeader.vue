@@ -8,6 +8,7 @@
 -->
 <script setup lang="ts">
 import type { DropdownMenuItem } from '@nuxt/ui';
+import { useLocale } from '@nuxt/ui/composables';
 
 import { backLink, type Crumb } from '~/lib/breadcrumbs';
 
@@ -41,11 +42,26 @@ const phoneMenu = computed<DropdownMenuItem[][]>(() =>
   ].filter((group) => group.length > 0),
 );
 const BOX = 'px-[max(1rem,calc((100%_-_72rem)/2))] sm:px-[max(1.5rem,calc((100%_-_72rem)/2))]';
+const PINNED_TOGGLE_VARS = {
+  '--desktop-gutter': '1.5rem',
+  '--toggle-icon-nudge': '0.375rem',
+  '--toggle-width': '2rem',
+  '--toggle-title-gap': '0.375rem',
+  '--pinned-toggle-reserve': 'calc(var(--desktop-gutter) - var(--toggle-icon-nudge) + var(--toggle-width) + var(--toggle-title-gap))',
+};
+const NAVBAR_BOX = `${BOX} lg:ps-[max(var(--pinned-toggle-reserve),calc((100%_-_72rem)/2))]`;
+const { t } = useLocale();
 </script>
 
 <template>
   <WorkerBanner />
-  <UDashboardNavbar :ui="{ root: BOX, title: 'text-base', right: 'gap-2' }" :toggle="{ class: 'lg:hidden -ms-1.5' }">
+  <UDashboardNavbar :style="PINNED_TOGGLE_VARS" :ui="{ root: [NAVBAR_BOX, 'relative'], title: 'text-base', right: 'gap-2' }">
+    <template #toggle="{ sidebarCollapsed }">
+      <UDashboardSidebarToggle class="-ms-(--toggle-icon-nudge)" />
+      <UTooltip :text="t(sidebarCollapsed?.value ? 'dashboardSidebarCollapse.expand' : 'dashboardSidebarCollapse.collapse')">
+        <UDashboardSidebarCollapse class="-ms-(--toggle-icon-nudge) lg:absolute lg:start-(--desktop-gutter) lg:top-1/2 lg:-translate-y-1/2" />
+      </UTooltip>
+    </template>
     <template #title>
       <template v-if="breadcrumb?.length">
         <UBreadcrumb :items="breadcrumb" class="hidden sm:flex min-w-0" :ui="{ link: 'text-sm font-normal', list: 'min-w-0' }" />
