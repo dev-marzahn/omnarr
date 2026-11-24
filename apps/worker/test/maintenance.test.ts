@@ -239,6 +239,7 @@ describe("the playback target's actions", () => {
     version: '12.4.0',
     adminUserId: 'u',
     libraries: [],
+    brandingClaim: {},
     steps: [{ step: 'reachable' as const, state: 'done' as const, at: 1 }],
   };
 

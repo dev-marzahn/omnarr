@@ -3,6 +3,7 @@
 import { DEFAULT_LIMITS, type JellyfinConnection, type MaintenancePayload, type SetupStep } from '@omnarr/contracts';
 import { afterEach, beforeEach, describe, expect, test } from 'vite-plus/test';
 
+import { OMNARR_CSS, omnarrBranding } from '../src/jellyfin/branding.ts';
 import { jellyfinClient, type JellyfinClient } from '../src/jellyfin/client.ts';
 import { JobFailure } from '../src/runtime/lease.ts';
 import { startFakeJellyfin, type FakeJellyfin } from './fakes/jellyfin.ts';
@@ -448,7 +449,7 @@ describe('observe', () => {
 describe('setup', () => {
   test('firstRun against a fresh Jellyfin runs every step in order, each through onStep', async () => {
     const { result, steps } = await setup();
-    expect(steps).toEqual(['reachable:done', 'wizard:done', 'apiKey:done', 'libraries:done', 'testRefresh:done']);
+    expect(steps).toEqual(['reachable:done', 'wizard:done', 'apiKey:done', 'libraries:done', 'branding:done', 'testRefresh:done']);
     expect(fake.wizardCompleted).toBe(true);
     expect(fake.admin).toMatchObject({ name: 'leon', password: PASSWORD });
     expect(result).toEqual({
@@ -462,7 +463,8 @@ describe('setup', () => {
         { libraryId: SERIES_LIB, itemId: fake.folders.find((f) => f.Name === 'Series')!.ItemId },
         { libraryId: MOVIES_LIB, itemId: fake.folders.find((f) => f.Name === 'Movies')!.ItemId },
       ],
-      steps: ['reachable', 'wizard', 'apiKey', 'libraries', 'testRefresh'].map((step) => ({ step, state: 'done', at: 0 })),
+      brandingClaim: omnarrBranding(undefined),
+      steps: ['reachable', 'wizard', 'apiKey', 'libraries', 'branding', 'testRefresh'].map((step) => ({ step, state: 'done', at: 0 })),
     });
   });
 
@@ -496,6 +498,11 @@ describe('setup', () => {
     expect(series).toMatchObject({ CollectionType: 'tvshows', Locations: ['/data/library/series'] });
     expect(fake.folders.find((f) => f.Name === 'Movies')).toMatchObject({ CollectionType: 'movies', Locations: ['/data/library/movies'] });
     expect(series.LibraryOptions).toMatchObject({ EnableRealtimeMonitor: false, PreferredMetadataLanguage: 'de', MetadataCountryCode: 'DE' });
+    expect(series.LibraryOptions).toMatchObject({
+      EnableTrickplayImageExtraction: true,
+      ExtractTrickplayImagesDuringLibraryScan: false,
+      SaveTrickplayWithMedia: false,
+    });
     const types = (series.LibraryOptions.TypeOptions as { Type: string; MetadataFetchers: string[]; ImageFetchers: string[] }[]).map((t) => t.Type);
     expect(types.sort()).toEqual(['Episode', 'Movie', 'Season', 'Series']);
     for (const option of series.LibraryOptions.TypeOptions as { MetadataFetchers: string[]; ImageFetchers: string[] }[])
@@ -519,7 +526,7 @@ describe('setup', () => {
     connection = { state: 'ready', apiKey: fake.keys[0]!.AccessToken, adminUserId: fake.admin!.id, libraries: [] };
     const { steps } = await setup(payload({ mode: 'rerun' }));
     expect(fake.requests.filter((r) => r.path.endsWith('/Refresh'))).toEqual([]);
-    expect(steps).toEqual(['reachable:done', 'wizard:done', 'apiKey:done', 'libraries:done']);
+    expect(steps).toEqual(['reachable:done', 'wizard:done', 'apiKey:done', 'libraries:done', 'branding:done']);
   });
 
   test('a completed wizard and a working key skip both steps; the result keeps the stored key', async () => {
@@ -629,5 +636,122 @@ describe('setup', () => {
     await setup(payload({ mode: 'rerun' }));
     expect(fake.requests.filter((r) => r.legacyAuth)).toEqual([]);
     for (const request of fake.requests.filter((r) => r.authorization)) expect(request.authorization).toMatch(/^MediaBrowser /);
+  });
+});
+
+describe('setup: branding', () => {
+  const NO_LINK = 'Sign in with your omnarr username and password. To add movies and series, open omnarr.';
+  const OLD_OMNARR = { serverName: 'omnarr-old', loginDisclaimer: 'An earlier omnarr line.', customCss: ':root { --old: 1; }' };
+  const USER = { ServerName: 'Living room', LoginDisclaimer: 'Ask Sam for a login.', CustomCss: '.mine {}' };
+  const FRESH_LOGIN_PAGE = { SplashscreenEnabled: false };
+  const loginPage = () => fake.brandingConfiguration;
+  const posts = () => calls().filter((c) => c === 'POST /System/Configuration' || c === 'POST /System/Configuration/branding');
+  const rerun = (extra: Partial<SetupPayload>) => setup(payload({ mode: 'rerun', ...extra }));
+  const freshJellyfin = () => {
+    fake.serverConfiguration.ServerName = '';
+    fake.brandingConfiguration = { ...FRESH_LOGIN_PAGE };
+  };
+
+  beforeEach(async () => {
+    connection = await readyConnection();
+    freshJellyfin();
+    fake.requests = [];
+  });
+
+  test("a fresh Jellyfin gets the server name, the login line and the theme; the splash setting stays Jellyfin's", async () => {
+    const { result } = await rerun({});
+    expect(fake.serverConfiguration.ServerName).toBe('omnarr');
+    expect(loginPage()).toEqual({ ...FRESH_LOGIN_PAGE, LoginDisclaimer: NO_LINK, CustomCss: OMNARR_CSS });
+    expect(result.brandingClaim).toEqual(omnarrBranding(undefined));
+  });
+
+  test("a field Jellyfin sends as null counts as Jellyfin's default", async () => {
+    fake.serverConfiguration.ServerName = null;
+    fake.brandingConfiguration = { ...FRESH_LOGIN_PAGE, LoginDisclaimer: null, CustomCss: null };
+    await rerun({});
+    expect(fake.serverConfiguration.ServerName).toBe('omnarr');
+    expect(loginPage()).toEqual({ ...FRESH_LOGIN_PAGE, LoginDisclaimer: NO_LINK, CustomCss: OMNARR_CSS });
+  });
+
+  test("the server name is written into Jellyfin's whole configuration, every other field as it was", async () => {
+    const recorded = { ...fake.serverConfiguration, ServerName: '' };
+    fake.serverConfiguration = recorded;
+    await rerun({});
+    expect(fake.serverConfiguration).toEqual({ ...recorded, ServerName: 'omnarr' });
+  });
+
+  test("the login line links to omnarr's address, escaped for HTML", async () => {
+    await rerun({ webUrl: 'https://media.example/omnarr?a=1&b="2"' });
+    expect(loginPage().LoginDisclaimer).toBe(
+      'Sign in with your omnarr username and password. To add movies and series, open ' +
+        '<a href="https://media.example/omnarr?a=1&amp;b=&quot;2&quot;" target="_blank" rel="noopener">omnarr</a>.',
+    );
+  });
+
+  test('an address that is not http or https gets the line without a link', async () => {
+    await rerun({ webUrl: 'javascript:alert(1)' });
+    expect(loginPage().LoginDisclaimer).toBe(NO_LINK);
+  });
+
+  test("a re-run replaces omnarr's own earlier values", async () => {
+    fake.serverConfiguration.ServerName = OLD_OMNARR.serverName;
+    fake.brandingConfiguration = { ...FRESH_LOGIN_PAGE, LoginDisclaimer: OLD_OMNARR.loginDisclaimer, CustomCss: OLD_OMNARR.customCss };
+    const { result } = await rerun({ brandingClaim: OLD_OMNARR });
+    expect(fake.serverConfiguration.ServerName).toBe('omnarr');
+    expect(loginPage()).toEqual({ ...FRESH_LOGIN_PAGE, LoginDisclaimer: NO_LINK, CustomCss: OMNARR_CSS });
+    expect(result.brandingClaim).toEqual(omnarrBranding(undefined));
+  });
+
+  test("a value the user changed in Jellyfin's dashboard stays, for every field, and omnarr drops its claim on it", async () => {
+    fake.serverConfiguration.ServerName = USER.ServerName;
+    fake.brandingConfiguration = { ...FRESH_LOGIN_PAGE, LoginDisclaimer: USER.LoginDisclaimer, CustomCss: USER.CustomCss };
+    const { result } = await rerun({ brandingClaim: OLD_OMNARR });
+    expect(posts()).toEqual([]);
+    expect(fake.serverConfiguration.ServerName).toBe(USER.ServerName);
+    expect(loginPage()).toEqual({ ...FRESH_LOGIN_PAGE, LoginDisclaimer: USER.LoginDisclaimer, CustomCss: USER.CustomCss });
+    expect(result.brandingClaim).toEqual({});
+  });
+
+  test("the user's login line stays while omnarr's theme is written beside it", async () => {
+    fake.brandingConfiguration = { ...FRESH_LOGIN_PAGE, LoginDisclaimer: USER.LoginDisclaimer, CustomCss: OLD_OMNARR.customCss };
+    const { result } = await rerun({ brandingClaim: OLD_OMNARR });
+    expect(loginPage()).toEqual({ ...FRESH_LOGIN_PAGE, LoginDisclaimer: USER.LoginDisclaimer, CustomCss: OMNARR_CSS });
+    expect(result.brandingClaim).toEqual({ serverName: 'omnarr', customCss: OMNARR_CSS });
+  });
+
+  test("the user's theme stays while omnarr's login line is written beside it", async () => {
+    fake.brandingConfiguration = { ...FRESH_LOGIN_PAGE, LoginDisclaimer: OLD_OMNARR.loginDisclaimer, CustomCss: USER.CustomCss };
+    const { result } = await rerun({ brandingClaim: OLD_OMNARR });
+    expect(loginPage()).toEqual({ ...FRESH_LOGIN_PAGE, LoginDisclaimer: NO_LINK, CustomCss: USER.CustomCss });
+    expect(result.brandingClaim).toEqual({ serverName: 'omnarr', loginDisclaimer: NO_LINK });
+  });
+
+  test('a Jellyfin that already shows the branding is not written again', async () => {
+    await rerun({});
+    fake.requests = [];
+    await rerun({ brandingClaim: omnarrBranding(undefined) });
+    expect(posts()).toEqual([]);
+  });
+
+  test('an install from before the branding gets it, its libraries, users and API key untouched', async () => {
+    const before = {
+      libraries: structuredClone(fake.folders),
+      keys: structuredClone(fake.keys),
+      admin: structuredClone(fake.admin),
+    };
+    const { result } = await rerun({});
+    expect(fake.serverConfiguration.ServerName).toBe('omnarr');
+    expect(loginPage().CustomCss).toBe(OMNARR_CSS);
+    expect(fake.folders).toEqual(before.libraries);
+    expect(fake.keys).toEqual(before.keys);
+    expect(fake.admin).toEqual(before.admin);
+    expect(result).not.toHaveProperty('apiKey');
+    expect(calls().filter((c) => c.includes('/Library/VirtualFolders') && c.startsWith('POST'))).toEqual([]);
+  });
+
+  test('an HTTP error while branding is jellyfinUnavailable at the branding step', async () => {
+    fake.failures.set('POST /System/Configuration/branding', 500);
+    const error = await failure(rerun({}));
+    expect(error).toMatchObject({ code: 'jellyfinUnavailable', data: { reason: 'setupFailed', step: 'branding' } });
   });
 });

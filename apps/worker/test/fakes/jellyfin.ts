@@ -62,6 +62,8 @@ export type FakeJellyfin = {
   keys: { AccessToken: string; AppName: string; DateCreated: string }[];
   sessionTokens: Set<string>;
   folders: FakeFolder[];
+  serverConfiguration: Record<string, unknown>;
+  brandingConfiguration: Record<string, unknown>;
   /** What Jellyfin has indexed and lists. */
   items: FakeItem[];
   /**
@@ -97,6 +99,8 @@ export async function startFakeJellyfin(): Promise<FakeJellyfin> {
     keys: [],
     sessionTokens: new Set(),
     folders: [],
+    serverConfiguration: fixture('system-configuration'),
+    brandingConfiguration: fixture('branding-configuration'),
     items: [],
     onDisk: [],
     sessions: [],
@@ -288,6 +292,16 @@ export async function startFakeJellyfin(): Promise<FakeJellyfin> {
     }
     if (route === 'POST /Sessions/Logout') {
       fake.sessionTokens.delete(caller.token);
+      return empty(res, 204);
+    }
+    if (route === 'GET /System/Configuration') return json(res, 200, fake.serverConfiguration);
+    if (route === 'POST /System/Configuration') {
+      fake.serverConfiguration = body as Record<string, unknown>;
+      return empty(res, 204);
+    }
+    if (route === 'GET /System/Configuration/branding') return json(res, 200, fake.brandingConfiguration);
+    if (route === 'POST /System/Configuration/branding') {
+      fake.brandingConfiguration = body as Record<string, unknown>;
       return empty(res, 204);
     }
     if (route === 'GET /Library/VirtualFolders') return json(res, 200, fake.folders);

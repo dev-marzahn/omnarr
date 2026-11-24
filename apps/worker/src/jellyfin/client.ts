@@ -5,6 +5,7 @@
 // connection, read on every call.
 import {
   type ActivePlay,
+  type OmnarrBrandingClaim,
   DEFAULT_LIMITS,
   type JellyfinConnection,
   type JobResult,
@@ -17,6 +18,7 @@ import {
 
 import { JobFailure } from '../runtime/lease.ts';
 import type { PlaybackTarget } from '../targets/playbackTarget.ts';
+import { omnarrBranding, planBranding } from './branding.ts';
 import { playMethod, type TranscodingInfo, transcodeReasons } from './reasons.ts';
 
 export type SetupPayload = Extract<MaintenancePayload, { action: 'setupJellyfin' }>;
@@ -111,6 +113,9 @@ export function jellyfinClient(options: JellyfinOptions): JellyfinClient {
       throw new CallError(response.status, `Jellyfin sent an answer that is not JSON (${where}).`);
     })) as T;
 
+  const getJson = async <T>(path: string, options: { authorization: string; query?: Record<string, string>; signal: AbortSignal }): Promise<T> =>
+    readJson<T>(await call('GET', path, options), `GET ${path}`);
+
   // ---- setup ----
 
   /** A setup step's failure: retried as `jellyfinUnavailable` (reason `setupFailed` once attempts run out). */
@@ -178,10 +183,7 @@ export function jellyfinClient(options: JellyfinOptions): JellyfinClient {
     }
     const authorization = `${setupClient}, Token="${session.AccessToken}"`;
     await call('POST', '/Auth/Keys', { query: { app: 'omnarr' }, authorization, signal });
-    const { Items } = await readJson<{ Items: { AccessToken: string; AppName: string; DateCreated: string }[] }>(
-      await call('GET', '/Auth/Keys', { authorization, signal }),
-      'GET /Auth/Keys',
-    );
+    const { Items } = await getJson<{ Items: { AccessToken: string; AppName: string; DateCreated: string }[] }>('/Auth/Keys', { authorization, signal });
     const ours = Items.filter((key) => key.AppName === 'omnarr').sort((a, b) => Date.parse(a.DateCreated) - Date.parse(b.DateCreated));
     const newest = ours.at(-1);
     if (!newest) throw new CallError(200, 'Jellyfin listed no omnarr key after making one (GET /Auth/Keys).');
@@ -198,6 +200,9 @@ export function jellyfinClient(options: JellyfinOptions): JellyfinClient {
       EnableRealtimeMonitor: false,
       PreferredMetadataLanguage: payload.locale.metadataLanguage,
       MetadataCountryCode: payload.locale.metadataCountry,
+      EnableTrickplayImageExtraction: true,
+      ExtractTrickplayImagesDuringLibraryScan: false,
+      SaveTrickplayWithMedia: false,
       ...(payload.offline
         ? {
             MetadataSavers: [],
@@ -210,7 +215,7 @@ export function jellyfinClient(options: JellyfinOptions): JellyfinClient {
   /** A library is present when a folder's `Locations` holds its root; a present one is never renamed. A missing one is created. */
   async function libraries(payload: SetupPayload, key: string, signal: AbortSignal): Promise<SetupResult['libraries']> {
     const authorization = tokenAuth(key);
-    const list = async () => readJson<VirtualFolder[]>(await call('GET', '/Library/VirtualFolders', { authorization, signal }), 'GET /Library/VirtualFolders');
+    const list = () => getJson<VirtualFolder[]>('/Library/VirtualFolders', { authorization, signal });
     let folders = await list();
     const result: SetupResult['libraries'] = [];
     for (const library of payload.libraries) {
@@ -229,6 +234,28 @@ export function jellyfinClient(options: JellyfinOptions): JellyfinClient {
       result.push({ libraryId: library.libraryId, itemId: folder.ItemId });
     }
     return result;
+  }
+
+  type ServerConfiguration = { ServerName?: string | null };
+  type LoginPageConfiguration = { LoginDisclaimer?: string | null; CustomCss?: string | null };
+
+  async function branding(payload: SetupPayload, key: string, signal: AbortSignal): Promise<OmnarrBrandingClaim> {
+    const authorization = tokenAuth(key);
+    const [server, login] = await Promise.all([
+      getJson<ServerConfiguration>('/System/Configuration', { authorization, signal }),
+      getJson<LoginPageConfiguration>('/System/Configuration/branding', { authorization, signal }),
+    ]);
+    const current = { serverName: server.ServerName ?? '', loginDisclaimer: login.LoginDisclaimer ?? '', customCss: login.CustomCss ?? '' };
+    const { next, claim } = planBranding(current, omnarrBranding(payload.webUrl), payload.brandingClaim ?? {});
+    if (next.serverName !== current.serverName)
+      await call('POST', '/System/Configuration', { authorization, body: { ...server, ServerName: next.serverName }, signal });
+    if (next.loginDisclaimer !== current.loginDisclaimer || next.customCss !== current.customCss)
+      await call('POST', '/System/Configuration/branding', {
+        authorization,
+        body: { ...login, LoginDisclaimer: next.loginDisclaimer, CustomCss: next.customCss },
+        signal,
+      });
+    return claim;
   }
 
   const refreshItem = (itemId: string, authorization: string, signal: AbortSignal) =>
@@ -252,6 +279,7 @@ export function jellyfinClient(options: JellyfinOptions): JellyfinClient {
     });
     const key = await run('apiKey', () => apiKey(payload, signal));
     const items = await run('libraries', () => libraries(payload, key.apiKey, signal));
+    const brandingClaim = await run('branding', () => branding(payload, key.apiKey, signal));
     if (payload.mode === 'firstRun')
       await run('testRefresh', async () => {
         for (const { itemId } of items) await refreshItem(itemId, tokenAuth(key.apiKey), signal);
@@ -264,6 +292,7 @@ export function jellyfinClient(options: JellyfinOptions): JellyfinClient {
       adminUserId: key.adminUserId,
       ...(key.created ? { apiKey: key.apiKey } : {}),
       libraries: items,
+      brandingClaim,
       steps,
     };
   }
@@ -410,7 +439,7 @@ export function jellyfinClient(options: JellyfinOptions): JellyfinClient {
     const { authorization, connection } = readyKey();
     let sessions: Session[];
     try {
-      sessions = await readJson<Session[]>(await call('GET', '/Sessions', { query: { activeWithinSeconds: '600' }, authorization, signal }), 'GET /Sessions');
+      sessions = await getJson<Session[]>('/Sessions', { query: { activeWithinSeconds: '600' }, authorization, signal });
     } catch (error) {
       return publishFailure(error);
     }

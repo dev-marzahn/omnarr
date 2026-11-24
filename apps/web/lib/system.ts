@@ -140,6 +140,7 @@ const STEP_LABEL: Record<SetupStep, string> = {
   wizard: 'Startup wizard',
   apiKey: 'API key',
   libraries: 'Libraries',
+  branding: 'Server name and look',
   testRefresh: 'First library scan',
 };
 

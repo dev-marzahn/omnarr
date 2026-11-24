@@ -50,7 +50,7 @@ describe('routeFor', () => {
 
 const jellyfin = (overrides: Partial<JellyfinStatus> = {}): JellyfinStatus => ({
   state: 'settingUp',
-  steps: (['reachable', 'wizard', 'apiKey', 'libraries', 'testRefresh'] as const).map((step) => ({ step, state: 'pending' as const })),
+  steps: (['reachable', 'wizard', 'apiKey', 'libraries', 'branding', 'testRefresh'] as const).map((step) => ({ step, state: 'pending' as const })),
   pinned: true,
   libraries: [],
   ...overrides,
@@ -82,7 +82,7 @@ const clients = (torrents: boolean, torrentConfig: 'applied' | 'pending' = 'appl
 const states = (lines: { key: string; state: string }[]) => Object.fromEntries(lines.map((line) => [line.key, line.state]));
 
 describe('checklist', () => {
-  test("worker connected with its version, NZBGet configured, qBittorrent skipped, Jellyfin's five steps in order", () => {
+  test("worker connected with its version, NZBGet configured, qBittorrent skipped, Jellyfin's six steps in order", () => {
     const done = jellyfin({ state: 'ready', steps: jellyfin().steps.map((step) => ({ ...step, state: 'done' as const })) });
     const { lines, actions, mismatch } = checklist(status({ jellyfin: done }), clients(false), []);
     expect(lines.map((line) => [line.key, line.label, line.state])).toEqual([
@@ -93,6 +93,7 @@ describe('checklist', () => {
       ['wizard', 'Startup wizard', 'done'],
       ['apiKey', 'API key', 'done'],
       ['libraries', 'Libraries', 'done'],
+      ['branding', 'Server name and look', 'done'],
       ['testRefresh', 'First library scan', 'done'],
     ]);
     expect(actions).toEqual([]);

@@ -14,7 +14,7 @@ export const SetupMode = z.enum(['firstRun', 'rerun']);
 export type SetupMode = z.infer<typeof SetupMode>;
 
 /** The setup's steps, in run order, which is the checklist's order. */
-export const SetupStep = z.enum(['reachable', 'wizard', 'apiKey', 'libraries', 'testRefresh']);
+export const SetupStep = z.enum(['reachable', 'wizard', 'apiKey', 'libraries', 'branding', 'testRefresh']);
 export type SetupStep = z.infer<typeof SetupStep>;
 
 export const SetupStepState = z.object({
@@ -31,6 +31,16 @@ export type JellyfinState = z.infer<typeof JellyfinState>;
 
 export const JellyfinLocale = z.object({ uiCulture: z.string(), metadataCountry: z.string(), metadataLanguage: z.string() });
 export type JellyfinLocale = z.infer<typeof JellyfinLocale>;
+
+export const JellyfinBranding = z.object({
+  serverName: z.string(),
+  loginDisclaimer: z.string(),
+  customCss: z.string(),
+});
+export type JellyfinBranding = z.infer<typeof JellyfinBranding>;
+
+export const OmnarrBrandingClaim = JellyfinBranding.partial();
+export type OmnarrBrandingClaim = z.infer<typeof OmnarrBrandingClaim>;
 
 /** Jellyfin's library item for a platform library. */
 export const JellyfinLibraryItem = z.object({ libraryId: zid('libraries'), itemId: z.string() });

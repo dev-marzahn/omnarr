@@ -6,6 +6,7 @@ import {
   AliasSource,
   ApiLimit,
   BlocklistReason,
+  OmnarrBrandingClaim,
   BuildState,
   CandidateReason,
   CandidateTorrent,
@@ -681,6 +682,7 @@ export default defineSchema({
     /** Never in a DTO; only `jellyfin.setup.connection` returns it. */
     apiKey: v.optional(v.string()),
     libraries: v.array(zodToConvex(JellyfinLibraryItem)),
+    brandingClaim: v.optional(zodToConvex(OmnarrBrandingClaim)),
     /** The platform admin's user ID, the owner of plays. */
     ownerUserId: v.string(),
     lastSetupAt: v.optional(v.number()),

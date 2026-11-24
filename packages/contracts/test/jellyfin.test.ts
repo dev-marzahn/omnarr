@@ -16,7 +16,7 @@ describe('localeFields', () => {
 });
 
 test('the setup steps run in checklist order', () => {
-  expect(SetupStep.options).toEqual(['reachable', 'wizard', 'apiKey', 'libraries', 'testRefresh']);
+  expect(SetupStep.options).toEqual(['reachable', 'wizard', 'apiKey', 'libraries', 'branding', 'testRefresh']);
 });
 
 test('JellyfinConnection parses with and without a key', () => {
@@ -48,6 +48,11 @@ describe('maintenance.setupJellyfin', () => {
     expect(JobPayload.parse({ ...payload, offline: true })).toEqual({ ...payload, offline: true });
   });
 
+  test("the payload may carry omnarr's address and the branding it set last; a queued payload from before parses without them", () => {
+    const branded = { ...payload, webUrl: 'https://media.example', brandingClaim: { serverName: 'omnarr' } };
+    expect(JobPayload.parse(branded)).toEqual(branded);
+  });
+
   test('the result carries the key only when a new one was made', () => {
     const result = {
       class: 'maintenance',
@@ -56,6 +61,7 @@ describe('maintenance.setupJellyfin', () => {
       version: '12.4.0',
       adminUserId: 'u',
       libraries: [{ libraryId: 'l1', itemId: 'i1' }],
+      brandingClaim: { serverName: 'omnarr', customCss: ':root {}' },
       steps: [{ step: 'reachable', state: 'done', at: 1 }],
     };
     expect(JobResult.parse(result)).toEqual(result);
