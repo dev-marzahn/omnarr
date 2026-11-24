@@ -264,8 +264,8 @@ export function storageGroups(storage: StorageStatus): StorageGroup[] {
 export function storageNotes(storage: StorageStatus): string[] {
   if (!storage.librarySameDevice || !storage.downloadsSameDevice) return [];
   return [
-    'One filesystem, so the areas share free space.',
-    'A torrent keeps its download until its seeding goal is met. A file prepared before then takes space twice until it is.',
+    'These areas share one filesystem and its free space.',
+    'Preparing a file while its torrent is still seeding takes double space until the seeding goal is met.',
   ];
 }
 

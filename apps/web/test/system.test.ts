@@ -420,8 +420,8 @@ describe('the free-space card', () => {
   // A torrent's download stays while it seeds, so free space comes back only at the goal.
   test('one filesystem: the areas share free space, and seeding holds a prepared file twice', () => {
     expect(storageNotes(storage())).toEqual([
-      'One filesystem, so the areas share free space.',
-      'A torrent keeps its download until its seeding goal is met. A file prepared before then takes space twice until it is.',
+      'These areas share one filesystem and its free space.',
+      'Preparing a file while its torrent is still seeding takes double space until the seeding goal is met.',
     ]);
   });
 
