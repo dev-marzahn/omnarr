@@ -63,7 +63,7 @@ const status = (overrides: Partial<SystemStatus> = {}): SystemStatus => ({
   clients: [nzbget],
   jobCounts: [],
   jellyfin: jellyfin(),
-  release: { version: '0.1.0' },
+  release: { version: '0.1.0', check: { state: 'notYet' } },
   ...overrides,
 });
 const clients = (torrents: boolean, torrentConfig: 'applied' | 'pending' = 'applied') =>

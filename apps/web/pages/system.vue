@@ -27,12 +27,15 @@ import {
   storageNotes,
   storageWarnings,
   supportBundleLine,
-  updateNote,
+  updateCheckLines,
+  type UpdateCheckLine,
   videoEncoders,
   vpnLine,
   workerLine,
 } from '~/lib/system';
 import { rewriteStorageUrl } from '~/lib/urls';
+
+const UPDATE_TONE_CLASS: Record<UpdateCheckLine['tone'], string> = { primary: 'text-primary', warning: 'text-warning', muted: 'text-muted' };
 
 const urls = useUrls();
 const { data, error } = useQuery(api.api.system.status, {});
@@ -163,10 +166,16 @@ const card = { header: 'py-3 sm:py-3', body: 'p-0 sm:p-0' };
               <p class="font-medium text-highlighted">omnarr {{ data.release.version === '0.0.0-dev' ? 'development build' : data.release.version }}</p>
               <p class="text-xs text-dimmed">Worker protocol v{{ worker?.expectedVersion ?? '—' }}</p>
             </div>
-            <ULink v-if="updateNote(data.release)" :to="updateNote(data.release)!.url" target="_blank" class="text-sm font-medium text-primary">
-              <UIcon name="i-lucide-arrow-up-circle" class="align-[-2px]" />
-              {{ updateNote(data.release)!.text }}
-            </ULink>
+            <template v-for="line in updateCheckLines(data.release)" :key="line.text">
+              <ULink v-if="line.url" :to="line.url" target="_blank" class="text-sm font-medium" :class="UPDATE_TONE_CLASS[line.tone]">
+                <UIcon :name="line.icon" class="align-[-2px]" />
+                {{ line.text }}
+              </ULink>
+              <p v-else class="text-sm" :class="UPDATE_TONE_CLASS[line.tone]">
+                <UIcon :name="line.icon" class="align-[-2px]" />
+                {{ line.text }}
+              </p>
+            </template>
             <p class="ms-auto text-xs text-muted">
               <UIcon name="i-lucide-package" class="align-[-2px]" />
               {{ supportBundleLine(bundle) ? `Support bundle: ${supportBundleLine(bundle)}` : 'No support bundle yet' }}
