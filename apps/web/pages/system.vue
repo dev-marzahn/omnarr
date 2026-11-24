@@ -21,6 +21,7 @@ import {
   jellyfinVersionLine,
   setupStepRows,
   storageGroups,
+  storageNotes,
   storageWarnings,
   supportBundleLine,
   updateNote,
@@ -319,8 +320,8 @@ const card = { header: 'py-3 sm:py-3', body: 'p-0 sm:p-0' };
                   <span v-if="!row.writable" class="text-xs text-error">not writable</span>
                   <span class="tabular-nums text-highlighted">{{ row.free }}</span>
                 </li>
-                <li v-if="data.storage.librarySameDevice && data.storage.downloadsSameDevice" class="px-4 py-3 sm:px-6 text-xs text-muted">
-                  One filesystem, so the areas share free space.
+                <li v-if="storageNotes(data.storage).length > 0" class="px-4 py-3 sm:px-6 text-xs text-muted">
+                  <p v-for="note in storageNotes(data.storage)" :key="note">{{ note }}</p>
                 </li>
                 <li v-for="warning in storageWarnings(data.storage).filter((w) => w.color === 'warning')" :key="warning.title" class="px-4 py-3 sm:px-6">
                   <UAlert color="warning" variant="subtle" icon="i-lucide-hard-drive" :title="warning.title" :description="warning.description" />

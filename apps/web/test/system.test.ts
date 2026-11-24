@@ -13,6 +13,7 @@ import {
   rerunErrorText,
   setupStepRows,
   storageGroups,
+  storageNotes,
   storageRows,
   storageUnavailableText,
   storageWarnings,
@@ -414,6 +415,20 @@ describe('the free-space card', () => {
       { label: 'originals', free: '3.2 TB free', writable: false },
       { label: 'library/movies', free: '1.0 TB free', writable: true },
     ]);
+  });
+
+  // A torrent's download stays while it seeds, so free space comes back only at the goal.
+  test('one filesystem: the areas share free space, and seeding holds a prepared file twice', () => {
+    expect(storageNotes(storage())).toEqual([
+      'One filesystem, so the areas share free space.',
+      'A torrent keeps its download until its seeding goal is met. A file prepared before then takes space twice until it is.',
+    ]);
+  });
+
+  test('no notes when downloads or the library are elsewhere: their warnings say it', () => {
+    const { areas } = storage();
+    expect(storageNotes(storage({ downloadsSameDevice: false }))).toEqual([]);
+    expect(storageNotes(storage({ librarySameDevice: false, areas: { ...areas, movies: area(1e12, 'sdb1') } }))).toEqual([]);
   });
 
   test('no warning when every area is writable and on one filesystem', () => {

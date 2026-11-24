@@ -255,6 +255,20 @@ export function storageGroups(storage: StorageStatus): StorageGroup[] {
   });
 }
 
+/**
+ * The free-space card's muted lines, on one filesystem: the areas share
+ * free space, and a torrent's download stays until its seeding goal, so a
+ * file prepared before then holds space twice. Downloads on another
+ * filesystem have their own warning instead.
+ */
+export function storageNotes(storage: StorageStatus): string[] {
+  if (!storage.librarySameDevice || !storage.downloadsSameDevice) return [];
+  return [
+    'One filesystem, so the areas share free space.',
+    'A torrent keeps its download until its seeding goal is met. A file prepared before then takes space twice until it is.',
+  ];
+}
+
 /** "a", "a and b", "a, b and c". */
 const listOf = (items: readonly string[]): string => (items.length < 2 ? (items[0] ?? '') : `${items.slice(0, -1).join(', ')} and ${items.at(-1)}`);
 const capitalised = (text: string): string => text.charAt(0).toUpperCase() + text.slice(1);

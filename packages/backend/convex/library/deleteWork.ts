@@ -288,7 +288,8 @@ async function raiseOrphans(ctx: MutationCtx, rows: OrphanRows): Promise<void> {
  * A kept Grab's rows never go while the client may still have its torrent:
  * that would leave the torrent unwatched, to come back as `orphanClientItem`
  * with its data on disk. Instead the client is asked again to remove it (a
- * fresh `removeDownload`, with its data once the goal was met), and the
+ * fresh `removeDownload`, with its data once the goal was met or its Grab
+ * is done), and the
  * sweep, with a new clock, deletes the rows once the Download is `removed`.
  * Only a Grab with no Download left in a client goes at once.
  */
@@ -322,6 +323,8 @@ async function askRemovalAgain(ctx: MutationCtx, download: Doc<'downloads'>): Pr
   // One still queued or running is the client being asked already.
   if (asked.some((job) => !ended(job))) return;
   for (const job of asked) await deleteJobRow(ctx, job);
+  // As `seedingEnded` decides: the data goes once the goal was met or the Grab is done, never while it is the only copy.
+  const grab = await ctx.db.get(download.grabId);
   await enqueueJob(ctx, {
     payload: {
       class: 'maintenance',
@@ -329,7 +332,7 @@ async function askRemovalAgain(ctx: MutationCtx, download: Doc<'downloads'>): Pr
       downloadId: download._id,
       clientKind: download.clientKind,
       clientRef: download.clientRef!,
-      deleteData: download.seedingDoneAt !== undefined,
+      deleteData: download.seedingDoneAt !== undefined || grab?.state === 'done',
       ...(download.correlationTag ? { correlationTag: download.correlationTag } : {}),
     },
     idempotencyKey,

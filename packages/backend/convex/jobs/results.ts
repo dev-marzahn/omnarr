@@ -136,9 +136,16 @@ const FINAL_GRAB = new Set(['done', 'failed', 'cancelled']);
  * (`seedingDone`), or qBittorrent lost its files or the torrent
  * (`seedingLost`). Only once its Grab has ended, so import never loses its
  * source; while the Grab runs, the report is ignored and comes again on the
- * next pass. Then the torrent leaves the client, with its data when the goal
- * was met, under one key, so a repeated report is harmless. No unit-scope
- * Issue: every Unit already has its file. A deleted Work changes nothing here.
+ * next pass. Then the torrent leaves the client under one key, so a
+ * repeated report is harmless. Its data goes with it when the goal was met,
+ * or when its Grab is `done`: a lost torrent in error can still have every
+ * file on disk, and once it leaves the client nothing would remove them,
+ * while a done Grab's library keeps its own hard link or copy. A lost
+ * torrent of a failed or cancelled Grab keeps its data: a Grab that failed
+ * on a system error (a share that dropped, which qBittorrent then reports as
+ * missing files) was never imported, and "Retry this release" imports it
+ * from there. No unit-scope Issue: every Unit already has its file. A
+ * deleted Work changes nothing here.
  */
 export async function seedingEnded(
   ctx: MutationCtx,
@@ -167,7 +174,7 @@ export async function seedingEnded(
       downloadId: download._id,
       clientKind: download.clientKind,
       clientRef: download.clientRef,
-      deleteData: met,
+      deleteData: met || grab?.state === 'done',
       correlationTag: download.correlationTag,
     },
     idempotencyKey,

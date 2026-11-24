@@ -525,6 +525,24 @@ describe('deleteWork leaves no orphan row', () => {
     for (const table of ['grabs', 'downloads', 'jobs', 'candidates', 'searchAttempts', 'events'] as const) expect(await h.all(table), table).toEqual([]);
   });
 
+  test("a lost torrent of a done Grab is asked again with its data, so its files don't stay behind", async () => {
+    const { w, downloadId } = await deletedWhileSeeding();
+    await w.seedingLost(downloadId);
+    await h.settle();
+    for (let attempt = 0; attempt < DEFAULT_LIMITS.maxAttempts.maintenance; attempt++) {
+      const [job] = await w.claim('maintenance');
+      if (!job) break;
+      await w.fail(job, 'clientUnreachable', 'qBittorrent refused the removal.');
+      vi.advanceTimersByTime(DEFAULT_LIMITS.backoffCapMs);
+      await h.settle();
+    }
+    await hours(7 * 24 + 1);
+    const [issue] = await h.all('issues').then((rows) => rows.filter((row) => row.failureCode === 'orphanAfterDelete'));
+    await h.admin.mutation(api.api.issues.act, { issueId: issue!._id, action: 'removeOrphans' });
+    const asked = (await h.all('jobs')).filter((job) => job.status === 'queued');
+    expect(asked.map((job) => job.payload)).toEqual([expect.objectContaining({ action: 'removeDownload', downloadId, deleteData: true })]);
+  });
+
   test('a seeding torrent whose client never answers is raised once its goal time plus 7 days has passed, and not before', async () => {
     const { downloadId } = await deletedWhileSeeding();
     // The tracker asks for 30 days; the client never reports again, so the Download stays `completed` and watched.
