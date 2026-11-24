@@ -34,12 +34,19 @@ export type AdapterIndexer = {
  * goes through `ctx`; a definition indexer is the relay to the worker's
  * engine, which takes its slots there.
  */
-export function createAdapter(indexer: AdapterIndexer, ctx: Pick<ActionCtx, 'runMutation' | 'runQuery'>, options: { timeoutMs?: number } = {}): IndexerAdapter {
+export function createAdapter(
+  indexer: AdapterIndexer,
+  ctx: Pick<ActionCtx, 'runMutation' | 'runQuery'>,
+  options: { timeoutMs?: number; slotWaitLeftMs: () => number },
+): IndexerAdapter {
   switch (indexer.kind) {
     case 'definition':
       return createRelayAdapter({ id: indexer.id, apiUrl: indexer.apiUrl, ...(indexer.caps?.searchModes ? { caps: indexer.caps as IndexerCaps } : {}) }, ctx);
     case 'nyaa':
-      return createNyaaAdapter(indexer, { ...options, pace: () => paced(ctx, indexer.id, pacingIntervalOf({ kind: 'nyaa' })!) });
+      return createNyaaAdapter(indexer, {
+        ...options,
+        pace: () => paced(ctx, indexer.id, pacingIntervalOf({ kind: 'nyaa' })!, options.slotWaitLeftMs()),
+      });
     case 'torznab':
       return createTorznabAdapter(indexer, options);
     case 'newznab':

@@ -110,6 +110,30 @@ describe('an anime episode arrives on RSS', () => {
     expect(indexer.health.lastRss).toMatchObject({ newItems: 3, matched: 1 });
   });
 
+  test('an episode a search is still running for keeps that search as its last, so it still shows Searching', async () => {
+    const workId = await subscribeStarLantern();
+    const s2e1 = (await t.run((ctx) => ctx.db.query('units').collect())).find((u) => u.workId === workId && u.tmdbSeason === 2 && u.tmdbEpisode === 1)!;
+    const runningSearch = await t.run(async (ctx) => {
+      const attemptId = await ctx.db.insert('searchAttempts', {
+        unitIds: [s2e1._id],
+        wantedUnitIds: [s2e1._id],
+        workId,
+        groupKind: 'animeEpisode',
+        trigger: 'manual',
+        state: 'running',
+        indexerResults: [],
+      });
+      await ctx.db.patch(s2e1._id, { lastSearchAttemptId: attemptId });
+      return attemptId;
+    });
+    const indexerId = await seedIndexer(t, { rssHighWaterMark: `${Date.parse('2026-11-01T00:00:00Z')}:old` });
+    serve([item('sl13', '[SubsPlease] Star Lantern - 13 (1080p) [ABCD1234].mkv', '2026-11-15T10:00:00Z')]);
+    await fetchRss(indexerId);
+
+    expect(await rssAttempts()).toHaveLength(1);
+    expect((await t.run((ctx) => ctx.db.get(s2e1._id)))!.lastSearchAttemptId).toBe(runningSearch);
+  });
+
   test('predicts preparation against the Work’s library target: with a target that takes HEVC, an HEVC episode needs no video step', async () => {
     await subscribeStarLantern();
     await admin.mutation(api.api.playback.update, {

@@ -68,7 +68,8 @@ GitHub releases (`updates.ts`). They never reach the worker, a download
 client, Jellyfin or `/data`.
 
 Scheduled work is in `crons.ts`: RSS every 5 minutes, job supervision
-every 30 seconds, a daily backfill search, a weekly upgrade search, the
+every 30 seconds, a sweep every 5 minutes that ends searches whose action
+stopped, a daily backfill search, a weekly upgrade search, the
 hourly metadata tick, the daily site-definition sync, the update check, and
 retention for candidates, artifacts and finished runs.
 

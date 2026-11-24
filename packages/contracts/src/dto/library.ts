@@ -216,7 +216,7 @@ export const SearchNowRequest = z.object({ unitIds: z.array(zid('units')).min(1)
 export type SearchNowRequest = z.infer<typeof SearchNowRequest>;
 
 /** How many SearchAttempts started: one per search group of the wanted Units among them. */
-export const SearchNowResponse = z.object({ attempts: z.number() });
+export const SearchNowResponse = z.object({ attempts: z.number(), skippedAlreadySearching: z.number() });
 export type SearchNowResponse = z.infer<typeof SearchNowResponse>;
 
 /** A row of the Work page's Blocklist tab: the release, why, the run that added it and that run's episodes. */

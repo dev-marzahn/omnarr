@@ -34,6 +34,12 @@ export function libraryQuery(query: Record<string, unknown>, state: { view: Libr
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n.toLocaleString('en-US')} ${n === 1 ? one : many}`;
 
+export function alreadySearchingToast(skipped: number, kind: 'series' | 'movie'): { title: string; description: string } | undefined {
+  if (skipped === 0) return undefined;
+  const what = kind === 'movie' ? 'The movie is' : `${plural(skipped, 'episode')} ${skipped === 1 ? 'is' : 'are'}`;
+  return { title: `${what} already being searched`, description: 'Skipped: that search is still running.' };
+}
+
 /**
  * A Work's status line: "22 of 30 ready", "22 of 22 · 2 not in
  * target format", "Searching for 6 episodes", "24 episodes · not monitored",

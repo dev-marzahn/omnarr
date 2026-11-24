@@ -445,8 +445,12 @@ export const searchNow = adminMutation({
     const playable: Id<'units'>[] = [];
     const other: Id<'units'>[] = [];
     for (const unitId of unitIds) ((await playablePrimary(ctx, unitId)) ? playable : other).push(unitId);
-    const attempts = [...(await startSearch(ctx, other, 'manual')), ...(await startSearch(ctx, playable, 'upgrade'))];
-    return { attempts: attempts.length };
+    const manual = await startSearch(ctx, other, 'manual');
+    const upgrade = await startSearch(ctx, playable, 'upgrade');
+    return {
+      attempts: manual.attemptIds.length + upgrade.attemptIds.length,
+      skippedAlreadySearching: manual.alreadySearching.length + upgrade.alreadySearching.length,
+    };
   },
 });
 

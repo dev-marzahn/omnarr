@@ -11,6 +11,7 @@ crons.hourly('metadata.tick', { minuteUTC: 0 }, internal.metadata.schedule.tick,
 crons.interval('rss.dispatch', { minutes: 5 }, internal.pipeline.rss.dispatch, {});
 // Lease reclaim, worker liveness and the end of pauses.
 crons.interval('supervise', { seconds: 30 }, internal.jobs.queue.supervise, {});
+crons.interval('search.endStopped', { minutes: 5 }, internal.pipeline.search.endStoppedSearches, {});
 // Wanted Units the other triggers missed, and Units whose air date has passed.
 crons.daily('backfill', { hourUTC: 3, minuteUTC: 0 }, internal.pipeline.backfill.runBackfill, {});
 // Playable Units whose release misses the cutoff, oldest search first.

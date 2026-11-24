@@ -75,7 +75,7 @@ describe('Nyaa', () => {
     const sent = await waitFor('the season search', async () => {
       const log = requests()
         .slice(before)
-        .filter((r) => r.query.includes('q=Star+Lantern'));
+        .filter((r) => r.query.includes('q=Star+Lantern&'));
       return log.length >= 2 ? log : undefined;
     });
     expect(sent.map((r) => r.query)).toEqual(['page=rss&q=Star+Lantern&c=1_0&f=0&m=1', 'q=Star+Lantern&c=1_0&f=0&s=id&o=desc&p=2']);

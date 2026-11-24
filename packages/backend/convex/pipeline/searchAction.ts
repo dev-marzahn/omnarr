@@ -12,11 +12,16 @@ import { internal } from '../_generated/api';
 import type { Id } from '../_generated/dataModel';
 import { type ActionCtx, internalAction } from '../_generated/server';
 import { createAdapter } from '../indexers/adapter';
+import { SEARCH_TIMEOUT_MS } from '../indexers/http';
+import { MAX_PACING_WAIT_MS } from '../indexers/pacing';
 import { atLimit, shareLeft } from '../indexers/rateLimit';
 import { sendsRequest } from '../indexers/relay';
 import { initialState, nextRequest, skipReason } from '../indexers/requestPlan';
+import { CONVEX_ACTION_LIMIT_MS, limits } from '../lib/limits';
 import type { CandidateInsert, IndexerForSearch, PageResult, SearchContext } from './search';
 import { upgradeVerdict } from './upgrades';
+
+const MARGIN_TO_RECORD_AND_PICK_MS = 30_000;
 
 /** A challenge is a rate limit too. */
 const statusOf = (kind: string): PageResult['status'] =>
@@ -114,7 +119,13 @@ export function candidateRow(
 }
 
 /** One indexer's part of a search: skips, then the plan's requests until it ends, each page recorded. */
-async function searchIndexer(ctx: ActionCtx, attemptId: Id<'searchAttempts'>, context: SearchContext, indexer: IndexerForSearch): Promise<void> {
+async function searchIndexer(
+  ctx: ActionCtx,
+  attemptId: Id<'searchAttempts'>,
+  context: SearchContext,
+  indexer: IndexerForSearch,
+  answerBy: number,
+): Promise<void> {
   const record = (rows: CandidateInsert[], calls: IndexerCall[], result: PageResult) =>
     ctx.runMutation(internal.pipeline.search.recordCandidatesPage, { attemptId, indexerId: indexer.id, rows, calls, result });
   const now = Date.now();
@@ -133,7 +144,9 @@ async function searchIndexer(ctx: ActionCtx, attemptId: Id<'searchAttempts'>, co
   }
   const target = await ctx.runQuery(internal.indexers.store.getForAction, { indexerId: indexer.id });
   if (!target) return;
-  const adapter = createAdapter(target, ctx);
+  const longestAnswerMs = target.kind === 'definition' ? limits().relayTimeoutMs : SEARCH_TIMEOUT_MS;
+  const slotWaitLeftMs = () => Math.min(MAX_PACING_WAIT_MS, answerBy - Date.now() - longestAnswerMs);
+  const adapter = createAdapter(target, ctx, { slotWaitLeftMs });
 
   // The action's own count of the day's requests: the snapshot, then each page's total.
   let usage = indexer.usage;
@@ -146,6 +159,7 @@ async function searchIndexer(ctx: ActionCtx, attemptId: Id<'searchAttempts'>, co
       step = nextRequest({ ...step.state, spent: step.state.spent - 1 }, { items: [] });
       continue;
     }
+    if (slotWaitLeftMs() < 0) return;
     if (shareLeft({ ...indexer, usage }, Date.now(), context.origin) < 1) {
       if (pages === 0) await record([], [], { pages: 0, count: 0, status: 'error', skipped: 'share' });
       return;
@@ -200,8 +214,10 @@ export const runSearch = internalAction({
   args: zodToConvexFields({ attemptId: zid('searchAttempts') }),
   returns: zodToConvex(z.null()),
   handler: async (ctx, { attemptId }) => {
+    const answerBy = Date.now() + CONVEX_ACTION_LIMIT_MS - MARGIN_TO_RECORD_AND_PICK_MS;
+    await ctx.runMutation(internal.pipeline.search.recordAnswerBy, { attemptId, answerBy });
     const context = await ctx.runQuery(internal.pipeline.search.context, { attemptId });
-    if (context) await Promise.all(context.indexers.map((indexer) => searchIndexer(ctx, attemptId, context, indexer)));
+    if (context) await Promise.all(context.indexers.map((indexer) => searchIndexer(ctx, attemptId, context, indexer, answerBy)));
     await ctx.runMutation(internal.pipeline.search.finishAttempt, { attemptId });
     return null;
   },

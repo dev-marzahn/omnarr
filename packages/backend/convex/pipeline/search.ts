@@ -36,12 +36,13 @@ import { internalMutation, internalQuery, type MutationCtx, type QueryCtx } from
 import { recordCallsIn } from '../indexers/store';
 import { recomputeUnits } from '../lib/derivedState';
 import { appendEvent } from '../lib/events';
+import { CONVEX_ACTION_LIMIT_MS } from '../lib/limits';
 import { transition } from '../lib/stateMachine';
 import { resolveUnits, searchKeys } from '../metadata/resolve';
 import { workMetadataOf } from '../metadata/write';
 import { targetOf } from '../playback/target';
 import { keysForWork } from './blocklist';
-import { groupUnits, type GroupUnit } from './groups';
+import { groupUnits, type GroupUnit, type SearchGroup } from './groups';
 import { pickInMutation } from './pick';
 import { CurrentRelease, currentsFor, playablePrimary } from './upgrades';
 
@@ -71,11 +72,49 @@ async function playableUnitIds(ctx: QueryCtx, units: Doc<'units'>[]): Promise<Se
   return playable;
 }
 
-const asGroupUnit = (unit: Doc<'units'>, now: number, playable?: Set<Id<'units'>>): GroupUnit => ({
-  _id: unit._id,
-  tmdbSeason: unit.tmdbSeason,
-  tmdbEpisode: unit.tmdbEpisode,
-  wanted: playable ? playable.has(unit._id) : isWanted(unit, now),
+const onlyOffers = (trigger: SearchTrigger) => trigger === 'interactive';
+
+export async function unitsBeingSearchedToPick(ctx: QueryCtx, workId: Id<'works'>): Promise<Set<Id<'units'>>> {
+  const running = await ctx.db
+    .query('searchAttempts')
+    .withIndex('by_state_work', (q) => q.eq('state', 'running').eq('workId', workId))
+    .collect();
+  return new Set(running.filter((attempt) => !onlyOffers(attempt.trigger)).flatMap((attempt) => attempt.unitIds));
+}
+
+type SearchPlan = { groups: SearchGroup[]; alreadySearching: Id<'units'>[] };
+export type StartedSearch = { attemptIds: Id<'searchAttempts'>[]; alreadySearching: Id<'units'>[] };
+
+export async function planSearch(
+  ctx: QueryCtx,
+  work: Doc<'works'>,
+  units: Doc<'units'>[],
+  trigger: SearchTrigger,
+  options: { perUnit?: boolean; now: number },
+): Promise<SearchPlan> {
+  if (onlyOffers(trigger)) return { groups: units.map((unit) => episodeGroup(work, unit._id)), alreadySearching: [] };
+  const all = await ctx.db
+    .query('units')
+    .withIndex('by_work', (q) => q.eq('workId', work._id))
+    .collect();
+  const searching = await unitsBeingSearchedToPick(ctx, work._id);
+  const playable = trigger === 'upgrade' ? await playableUnitIds(ctx, all) : undefined;
+  const eligible = (unit: Doc<'units'>) => !searching.has(unit._id) && (playable ? playable.has(unit._id) : isWanted(unit, options.now));
+  const asGroupUnit = (unit: Doc<'units'>): GroupUnit => ({
+    _id: unit._id,
+    tmdbSeason: unit.tmdbSeason,
+    tmdbEpisode: unit.tmdbEpisode,
+    wanted: eligible(unit),
+  });
+  const groups = options.perUnit
+    ? units.filter(eligible).map((unit) => episodeGroup(work, unit._id))
+    : groupUnits(units.map(asGroupUnit), { kind: work.kind, numberingScheme: work.numberingScheme, units: all.map(asGroupUnit) });
+  return { groups, alreadySearching: units.filter((unit) => searching.has(unit._id)).map((unit) => unit._id) };
+}
+
+const episodeGroup = (work: Doc<'works'>, unitId: Id<'units'>): SearchGroup => ({
+  kind: work.numberingScheme === 'anime' ? 'animeEpisode' : 'episode',
+  unitIds: [unitId],
 });
 
 /**
@@ -90,8 +129,7 @@ export async function startSearch(
   unitIds: Id<'units'>[],
   trigger: SearchTrigger,
   options: { perUnit?: boolean } = {},
-): Promise<Id<'searchAttempts'>[]> {
-  const interactive = trigger === 'interactive';
+): Promise<StartedSearch> {
   const now = Date.now();
   const byWork = new Map<Id<'works'>, Doc<'units'>[]>();
   for (const unitId of new Set(unitIds)) {
@@ -99,22 +137,12 @@ export async function startSearch(
     if (unit) byWork.set(unit.workId, [...(byWork.get(unit.workId) ?? []), unit]);
   }
 
-  const started: Id<'searchAttempts'>[] = [];
+  const started: StartedSearch = { attemptIds: [], alreadySearching: [] };
   for (const [workId, units] of byWork) {
     const work = await ctx.db.get(workId);
     if (!work) continue;
-    const all = await ctx.db
-      .query('units')
-      .withIndex('by_work', (q) => q.eq('workId', workId))
-      .collect();
-    const playable = trigger === 'upgrade' ? await playableUnitIds(ctx, all) : undefined;
-    const input = units.map((unit) => asGroupUnit(unit, now, playable));
-    const groups =
-      options.perUnit || interactive
-        ? input
-            .filter((unit) => unit.wanted || interactive)
-            .map((unit) => ({ kind: work.numberingScheme === 'anime' ? ('animeEpisode' as const) : ('episode' as const), unitIds: [unit._id] }))
-        : groupUnits(input, { kind: work.kind, numberingScheme: work.numberingScheme, units: all.map((unit) => asGroupUnit(unit, now, playable)) });
+    const { groups, alreadySearching } = await planSearch(ctx, work, units, trigger, { ...options, now });
+    started.alreadySearching.push(...alreadySearching);
 
     for (const group of groups) {
       const attemptId = await ctx.db.insert('searchAttempts', {
@@ -137,17 +165,54 @@ export async function startSearch(
         });
       }
       await recomputeUnits(ctx, group.unitIds);
-      await ctx.scheduler.runAfter(0, internal.pipeline.searchAction.runSearch, { attemptId });
-      started.push(attemptId);
+      const searchRunId = await ctx.scheduler.runAfter(0, internal.pipeline.searchAction.runSearch, { attemptId });
+      await ctx.db.patch(attemptId, { searchRunId });
+      started.attemptIds.push(attemptId);
     }
   }
   return started;
 }
 
+const LOST_RUN_MARGIN_MS = 10 * 60_000;
+const longerThanAnyRun = (since: number, now: number) => now - since > CONVEX_ACTION_LIMIT_MS + LOST_RUN_MARGIN_MS;
+
+const preUpdateSearchLost = (attempt: Doc<'searchAttempts'>, now: number) => longerThanAnyRun(attempt._creationTime, now);
+
+async function searchStopped(ctx: QueryCtx, attempt: Doc<'searchAttempts'>, now: number): Promise<boolean> {
+  if (attempt.searchRunId === undefined) return preUpdateSearchLost(attempt, now);
+  const run = await ctx.db.system.get(attempt.searchRunId);
+  if (run === null) return true;
+  switch (run.state.kind) {
+    case 'pending':
+      return false;
+    case 'inProgress':
+      if (attempt.answerBy === undefined) return longerThanAnyRun(run.scheduledTime, now);
+      return now > attempt.answerBy + LOST_RUN_MARGIN_MS;
+    default:
+      return true;
+  }
+}
+
+export const endStoppedSearches = internalMutation({
+  args: {},
+  returns: zodToConvex(z.null()),
+  handler: async (ctx) => {
+    const now = Date.now();
+    const running = await ctx.db
+      .query('searchAttempts')
+      .withIndex('by_state_work', (q) => q.eq('state', 'running'))
+      .collect();
+    for (const attempt of running)
+      if (await searchStopped(ctx, attempt, now))
+        await transition(ctx, 'searchAttempt', attempt._id, 'failed', { kind: 'stageFailed', message: 'The search stopped before it finished.' });
+    return null;
+  },
+});
+
 export const start = internalMutation({
   args: zodToConvexFields({ unitIds: z.array(zid('units')), trigger: SearchTrigger }),
   returns: zodToConvex(z.array(zid('searchAttempts'))),
-  handler: (ctx, { unitIds, trigger }) => startSearch(ctx, unitIds, trigger),
+  handler: async (ctx, { unitIds, trigger }) => (await startSearch(ctx, unitIds, trigger)).attemptIds,
 });
 
 /**
@@ -158,7 +223,7 @@ export const start = internalMutation({
 export const nextBest = internalMutation({
   args: zodToConvexFields({ unitIds: z.array(zid('units')) }),
   returns: zodToConvex(z.array(zid('searchAttempts'))),
-  handler: (ctx, { unitIds }) => startSearch(ctx, unitIds, 'nextBest'),
+  handler: async (ctx, { unitIds }) => (await startSearch(ctx, unitIds, 'nextBest')).attemptIds,
 });
 
 /** An indexer as a search sees it: everything but its key. */
@@ -281,6 +346,16 @@ export const profileContent = (profile: Doc<'releaseProfiles'>): ReleaseProfileC
   const { _id, _creationTime, shippedKey: _k, shippedVersion: _v, pendingShippedVersion: _p, editedByUser: _e, ...content } = profile;
   return content;
 };
+
+export const recordAnswerBy = internalMutation({
+  args: zodToConvexFields({ attemptId: zid('searchAttempts'), answerBy: z.number() }),
+  returns: zodToConvex(z.null()),
+  handler: async (ctx, { attemptId, answerBy }) => {
+    const attempt = await ctx.db.get(attemptId);
+    if (attempt?.state === 'running') await ctx.db.patch(attemptId, { answerBy });
+    return null;
+  },
+});
 
 /** The search's one context read; null once the attempt or its Work is gone. */
 export const context = internalQuery({

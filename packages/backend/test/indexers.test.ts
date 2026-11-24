@@ -7,6 +7,7 @@ import { defaultCategories, normalizeApiUrl, parseCaps } from '../convex/indexer
 import { testConnection } from '../convex/indexers/connection';
 import { parseFeed } from '../convex/indexers/feed.ts';
 import { detectKind } from '../convex/indexers/newznab';
+import { MAX_PACING_WAIT_MS } from '../convex/indexers/pacing';
 import apiLimitsCamel from './fixtures/newznab/apilimits-camel.xml?raw';
 import apiLimitsLower from './fixtures/newznab/apilimits-lower.xml?raw';
 import badScheme from './fixtures/newznab/bad-scheme.xml?raw';
@@ -24,11 +25,11 @@ import { useFetchFakes } from './setup';
 const at = { host: 'indexer.example', path: '/api', protocol: 'usenet' } as const;
 
 /** The Newznab and Torznab adapters take no pacing slot, so they get no action context. */
-const createAdapter = (indexer: Omit<AdapterIndexer, 'id'>, options?: { timeoutMs?: number }) =>
+const createAdapter = (indexer: Omit<AdapterIndexer, 'id'>, options: { timeoutMs?: number } = {}) =>
   createAdapterFor(
     { id: 'unpaced' as Id<'indexers'>, ...indexer },
     { runMutation: () => Promise.reject(new Error('not paced')), runQuery: () => Promise.reject(new Error('not relayed')) },
-    options,
+    { ...options, slotWaitLeftMs: () => MAX_PACING_WAIT_MS },
   );
 
 describe('feed.ts: Newznab results', () => {

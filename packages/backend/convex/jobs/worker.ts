@@ -25,7 +25,7 @@ import type { MutationCtx, QueryCtx } from '../_generated/server';
 import { systemStatusOf } from '../api/system';
 import { clientRow, toDetail } from '../downloadClients/store';
 import { toRow } from '../indexers/dto';
-import { pacingIntervalOf, reserveSlot } from '../indexers/pacing';
+import { MAX_PACING_WAIT_MS, pacingIntervalOf, reserveSlot } from '../indexers/pacing';
 import { issueListOf } from '../issues/rows';
 import { workerError, workerMutation, workerQuery } from '../lib/functions';
 import { raiseIssue, resolveSystemIssue } from '../lib/issues';
@@ -194,7 +194,7 @@ export const reservePacing = workerMutation({
     await leaseForIndexer(ctx, { jobId, leaseEpoch }, indexerId);
     const indexer = await ctx.db.get(indexerId);
     if (!indexer || indexer.kind !== 'definition') throw workerError('invalidResult', { expected: 'a definition indexer' });
-    return await reserveSlot(ctx, indexerId, pacingIntervalOf(indexer)!);
+    return await reserveSlot(ctx, indexerId, pacingIntervalOf(indexer)!, MAX_PACING_WAIT_MS);
   },
 });
 

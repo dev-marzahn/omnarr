@@ -31,7 +31,7 @@ import { type ConnectionTest, testConnection, testSiteConnection } from '../inde
 import { toRow } from '../indexers/dto';
 import { TEST_TIMEOUT_MS } from '../indexers/http';
 import { createNyaaAdapter, NYAA_CATEGORIES, nyaaBaseUrl, nyaaCaps } from '../indexers/nyaa';
-import { deletePacing, paced, pacedSite, pacingIntervalOf } from '../indexers/pacing';
+import { deletePacing, MAX_PACING_WAIT_MS, paced, pacedSite, pacingIntervalOf } from '../indexers/pacing';
 import { relayTest } from '../indexers/relay';
 import { detailOf } from '../indexers/store';
 import { adminAction, adminMutation, adminQuery } from '../lib/functions';
@@ -131,7 +131,7 @@ export const test = adminAction({
       }
       if (indexer.kind === 'nyaa') {
         if (input.url !== undefined || input.apiKey !== undefined) throw notEditable();
-        const test = await nyaaTest(indexer.apiUrl, () => paced(ctx, input.indexerId, pacingIntervalOf({ kind: 'nyaa' })!));
+        const test = await nyaaTest(indexer.apiUrl, () => paced(ctx, input.indexerId, pacingIntervalOf({ kind: 'nyaa' })!, MAX_PACING_WAIT_MS));
         await ctx.runMutation(internal.indexers.store.recordCalls, { indexerId: input.indexerId, calls: test.calls });
         if (test.result.ok && test.caps) await ctx.runMutation(internal.indexers.store.saveCaps, { indexerId: input.indexerId, caps: test.caps });
         return test.result;
@@ -196,7 +196,7 @@ export const testSite = adminAction({
     nyaaOnly(input);
     const existing: Id<'indexers'> | null = await ctx.runQuery(internal.indexers.store.siteIndexerId, { kind: input.kind });
     const intervalMs = pacingIntervalOf({ kind: 'nyaa' })!;
-    return (await nyaaTest(nyaaBaseUrl(), () => (existing ? paced(ctx, existing, intervalMs) : pacedSite(ctx, 'nyaa', intervalMs)))).result;
+    return (await nyaaTest(nyaaBaseUrl(), () => (existing ? paced(ctx, existing, intervalMs, MAX_PACING_WAIT_MS) : pacedSite(ctx, 'nyaa', intervalMs)))).result;
   },
 });
 
@@ -230,7 +230,7 @@ async function createDefinitionIndexer(ctx: ActionCtx, input: IndexerCreateSiteI
   });
   // The test's request was the site's last one: the next waits its interval.
   const indexer = await stored(ctx, id);
-  await ctx.runMutation(internal.indexers.pacing.reserve, { indexerId: id, intervalMs: pacingIntervalOf(indexer)! });
+  await ctx.runMutation(internal.indexers.pacing.reserve, { indexerId: id, intervalMs: pacingIntervalOf(indexer)!, longestWaitMs: MAX_PACING_WAIT_MS });
   await ctx.runMutation(internal.indexers.store.recordCalls, { indexerId: id, calls: testCalls(result) });
   return (await ctx.runQuery(internal.indexers.store.detail, { indexerId: id }))!;
 }

@@ -12,6 +12,7 @@ import type { Id } from '../_generated/dataModel';
 import { internalAction } from '../_generated/server';
 import { builtCaps, createAdapter } from '../indexers/adapter';
 import { pageSizeOf } from '../indexers/newznab';
+import { MAX_PACING_WAIT_MS } from '../indexers/pacing';
 import { atLimit, shareLeft } from '../indexers/rateLimit';
 import { sendsRequest } from '../indexers/relay';
 import { animeOnly } from '../indexers/requestPlan';
@@ -40,7 +41,7 @@ export const fetch = internalAction({
     await ctx.runMutation(internal.indexers.store.markRssStarted, { indexerId, now: Date.now() });
     const indexer = await ctx.runQuery(internal.indexers.store.getForAction, { indexerId });
     if (!indexer) return null;
-    const adapter = createAdapter(indexer, ctx);
+    const adapter = createAdapter(indexer, ctx, { slotWaitLeftMs: () => MAX_PACING_WAIT_MS });
     const calls = (call: IndexerCall) => ctx.runMutation(internal.indexers.store.recordCalls, { indexerId, calls: [call] });
     // Anime-only indexers have nothing for a series without anime numbering.
     const animeIndexer = animeOnly(indexer);
