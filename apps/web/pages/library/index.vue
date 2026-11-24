@@ -11,6 +11,7 @@ import type { LibraryKind } from '@omnarr/contracts';
 
 import { activeDownloadsLine, seedingMarker } from '~/lib/downloads';
 import { libraryQuery, libraryState, type LibraryView, workLine } from '~/lib/library';
+import { activePreparationsLine } from '~/lib/preparingProgress';
 import { matchesFilter, type WorkFilter } from '~/lib/unitStates';
 
 const route = useRoute();
@@ -174,6 +175,9 @@ async function onSubscribed(workId: string, title: string) {
                   <StateBar :states="work.states" class="max-w-56" />
                   <p v-if="activeDownloadsLine(work.activeDownloads)" class="flex items-center gap-1 text-xs text-info tabular-nums">
                     <UIcon name="i-lucide-download" />{{ activeDownloadsLine(work.activeDownloads)!.line }}
+                  </p>
+                  <p v-if="activePreparationsLine(work.activePreparations)" class="flex items-center gap-1 text-xs text-secondary tabular-nums">
+                    <UIcon name="i-lucide-wand-sparkles" />{{ activePreparationsLine(work.activePreparations)!.line }}
                   </p>
                   <p v-if="workLine(work).issues" class="inline-flex items-center gap-1 text-xs text-error">
                     <UIcon name="i-lucide-triangle-alert" />{{ workLine(work).issues }} open

@@ -7,18 +7,13 @@ import type { WorkSummary } from '@omnarr/contracts';
 
 import { activeDownloadsLine, seedingMarker } from '~/lib/downloads';
 import { workLine } from '~/lib/library';
+import { posterBadge } from '~/lib/preparingProgress';
 
 const props = defineProps<{ work: WorkSummary }>();
 const status = computed(() => workLine(props.work));
 // After the status line, never on the poster: the poster's corner is for downloads and failures.
 const marker = computed(() => seedingMarker(props.work.seeding));
-// The poster's badge: the running downloads' percent, else the failed Units.
-const badge = computed(() => {
-  const downloading = activeDownloadsLine(props.work.activeDownloads);
-  if (downloading) return { label: downloading.badge, icon: 'i-lucide-download', color: 'info' as const };
-  const failed = props.work.states.find((s) => s.state === 'failed')?.count ?? 0;
-  return failed > 0 ? { label: `${failed} failed`, icon: 'i-lucide-circle-x', color: 'error' as const } : undefined;
-});
+const badge = computed(() => posterBadge(props.work, activeDownloadsLine(props.work.activeDownloads)));
 </script>
 
 <template>

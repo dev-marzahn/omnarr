@@ -4,6 +4,7 @@ import {
   type ClientStatusRow,
   type JellyfinSetupReason,
   type JellyfinStatus,
+  type LibrarySize,
   type RerunSetupResponse,
   type SetupStep,
   type SetupStepState,
@@ -267,6 +268,28 @@ export function storageNotes(storage: StorageStatus): string[] {
     'These areas share one filesystem and its free space.',
     'Preparing a file while its torrent is still seeding takes double space until the seeding goal is met.',
   ];
+}
+
+export type LibrarySizeRow = { label: string; size: string; part: boolean };
+export type LibrarySizeView = { rows: LibrarySizeRow[]; note: string };
+
+/**
+ * The free-space card's "Library" rows from `system.librarySize`: the total,
+ * then Series and Movies under it, and one muted line with when it was
+ * measured and what isn't counted. While the read runs, or after it fails,
+ * one line in their place; the free-space rows above don't wait on it.
+ */
+export function librarySizeView(size: LibrarySize | undefined, failed = false): LibrarySizeView {
+  if (failed) return { rows: [], note: "Couldn't measure the library's size. Open System again to retry." };
+  if (!size) return { rows: [{ label: 'Library', size: 'measuring…', part: false }], note: '' };
+  return {
+    rows: [
+      { label: 'Library', size: `${formatBytes(size.totalBytes)} used`, part: false },
+      { label: 'Series', size: formatBytes(size.seriesBytes), part: true },
+      { label: 'Movies', size: formatBytes(size.moviesBytes), part: true },
+    ],
+    note: `Measured ${time.format(size.measuredAt)}. Counts only the files omnarr tracks.`,
+  };
 }
 
 /** "a", "a and b", "a, b and c". */

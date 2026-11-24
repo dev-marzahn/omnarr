@@ -67,7 +67,7 @@ The release's push, set up once by a repository admin:
 
 `packages/contracts` holds every Zod (v4) schema that crosses a process boundary: DTOs, job payloads and results, the protocol version, and the state and failure enums. Convex validators are derived from these schemas with `convex-helpers/server/zod4` (`zodToConvex`, `zodToConvexFields`, `zCustomQuery`, `zCustomMutation`); never write a validator twice. Don't use `zod/v3` or the deprecated `convex-helpers/server/zod`.
 
-Every public Convex function is built from `adminQuery`, `adminMutation`, `adminAction`, `workerQuery` or `workerMutation` (`convex/lib/functions.ts`) and declares a `returns` schema. `adminAction` is only for admin calls that make an outside HTTP request (metadata and indexers). Secret fields never appear in a DTO.
+Every public Convex function is built from `adminQuery`, `adminMutation`, `adminAction`, `workerQuery` or `workerMutation` (`convex/lib/functions.ts`) and declares a `returns` schema. `adminAction` is only for admin calls that make an outside HTTP request (metadata and indexers), or that read a whole table in pages, too much for one query (`system.librarySize`). Secret fields never appear in a DTO.
 
 Any breaking change to `packages/contracts` raises `PROTOCOL_VERSION` (from v1 on).
 

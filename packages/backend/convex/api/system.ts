@@ -6,6 +6,7 @@ import {
   DEFAULT_LIMITS,
   JOB_CLASSES,
   type JobCounts,
+  LibrarySize,
   PROTOCOL_VERSION,
   QUEUE_COUNT_CAP,
   type StorageStatus,
@@ -17,7 +18,8 @@ import type { QueryCtx } from '../_generated/server';
 import { configState } from '../downloadClients/store';
 import { enqueueJob } from '../jobs/queue';
 import { librarySameDevice } from '../jobs/worker';
-import { adminMutation, adminQuery } from '../lib/functions';
+import { adminAction, adminMutation, adminQuery } from '../lib/functions';
+import { librarySizeOf } from '../library/size';
 import { settingsRow } from '../setup/settings';
 import { availableUpdate } from '../updates';
 import { jellyfinStatusOf } from './jellyfin';
@@ -106,6 +108,17 @@ export const buildSupportBundle = adminMutation({
     });
     return { jobId };
   },
+});
+
+/**
+ * System › Free space's "Library" rows: what the tracked files take, by
+ * kind. An action the page calls when it opens, not part of `status`: the
+ * sum reads every file, too much for a reactive read.
+ */
+export const librarySize = adminAction({
+  args: {},
+  returns: LibrarySize,
+  handler: (ctx) => librarySizeOf(ctx),
 });
 
 export const status = adminQuery({

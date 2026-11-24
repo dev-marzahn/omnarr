@@ -1,7 +1,8 @@
 <!--
   The System page: omnarr's running version (with room for a release-check
   note), the worker and Jellyfin, the download clients and the VPN as one
-  line each, free space per filesystem with the storage warnings, indexer
+  line each, free space per filesystem with the storage warnings and the
+  library's size (system.librarySize, measured on open), indexer
   health and the job queue, from system.status. "Support bundle" in the
   header bar with the latest bundle's download and line, and the Jellyfin
   card's fix from the open Jellyfin Issues.
@@ -9,6 +10,7 @@
 <script setup lang="ts">
 import { api } from '@omnarr/backend/api';
 import type { Id } from '@omnarr/backend/dataModel';
+import type { LibrarySize } from '@omnarr/contracts';
 
 import { VPN_KINDS } from '~/lib/downloads';
 import { HEALTH_LABEL } from '~/lib/indexers';
@@ -19,6 +21,7 @@ import {
   jellyfinLibrariesLine,
   jellyfinStateLabel,
   jellyfinVersionLine,
+  librarySizeView,
   setupStepRows,
   storageGroups,
   storageNotes,
@@ -98,6 +101,18 @@ const headerActions = computed(() => [
     onClick: onBuildBundle,
   },
 ]);
+// The Library rows: measured once each time the page opens, since the sum reads every file.
+const measureLibrary = useAction(api.api.system.librarySize);
+const librarySize = ref<LibrarySize>();
+const librarySizeFailed = ref(false);
+const library = computed(() => librarySizeView(librarySize.value, librarySizeFailed.value));
+onMounted(async () => {
+  try {
+    librarySize.value = await measureLibrary({});
+  } catch {
+    librarySizeFailed.value = true;
+  }
+});
 const time = new Intl.DateTimeFormat(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 const clock = new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit' });
 const worker = computed(() => data.value?.worker);
@@ -323,6 +338,11 @@ const card = { header: 'py-3 sm:py-3', body: 'p-0 sm:p-0' };
                 <li v-if="storageNotes(data.storage).length > 0" class="px-4 py-3 sm:px-6 text-xs text-muted">
                   <p v-for="note in storageNotes(data.storage)" :key="note">{{ note }}</p>
                 </li>
+                <li v-for="row in library.rows" :key="row.label" class="flex items-center gap-3 px-4 py-3 sm:px-6" :class="row.part && 'ps-8 sm:ps-10'">
+                  <span class="flex-1 min-w-0" :class="row.part && 'text-muted'">{{ row.label }}</span>
+                  <span class="tabular-nums" :class="row.part ? 'text-muted' : 'text-highlighted'">{{ row.size }}</span>
+                </li>
+                <li v-if="library.note" class="px-4 py-3 sm:px-6 text-xs text-muted">{{ library.note }}</li>
                 <li v-for="warning in storageWarnings(data.storage).filter((w) => w.color === 'warning')" :key="warning.title" class="px-4 py-3 sm:px-6">
                   <UAlert color="warning" variant="subtle" icon="i-lucide-hard-drive" :title="warning.title" :description="warning.description" />
                 </li>

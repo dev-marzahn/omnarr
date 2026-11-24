@@ -8,8 +8,9 @@ import { api } from '@omnarr/backend/api';
 import type { Id } from '@omnarr/backend/dataModel';
 
 import { entryHeader, entryTitle, type PreparationEntry } from '~/lib/preparation';
+import type { PreparingProgress } from '~/lib/preparingProgress';
 
-const props = defineProps<{ entry: PreparationEntry; unitId: Id<'units'> }>();
+const props = defineProps<{ entry: PreparationEntry; unitId: Id<'units'>; progress?: PreparingProgress }>();
 const toast = useToast();
 const header = computed(() => entryHeader(props.entry));
 const title = computed(() => entryTitle(props.entry));
@@ -51,6 +52,7 @@ async function cancel() {
         />
       </div>
     </template>
+    <DownloadProgress v-if="progress" variant="inline" :percent="progress.percent" :line="progress.text" color="secondary" class="mb-3" />
     <ul class="space-y-1">
       <TimelineStage v-for="(stage, i) in entry.events" :key="i" :stage="stage" />
     </ul>

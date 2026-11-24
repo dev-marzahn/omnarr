@@ -5,7 +5,7 @@
   is undefined before the client's first report.
 -->
 <script setup lang="ts">
-withDefaults(
+const props = withDefaults(
   defineProps<{
     variant?: 'full' | 'inline';
     percent?: number;
@@ -21,11 +21,12 @@ withDefaults(
   }>(),
   { variant: 'full', percent: undefined, stage: undefined, context: undefined, line: undefined, release: undefined, color: 'info' },
 );
+const label = computed(() => [props.stage, props.line].filter(Boolean).join(' · ') || 'Progress');
 </script>
 
 <template>
   <div v-if="variant === 'inline'" class="flex items-center gap-2 text-xs text-muted">
-    <UProgress :model-value="percent ?? null" :color="color" size="xs" class="w-24 shrink-0" />
+    <UProgress :model-value="percent ?? null" :color="color" size="xs" class="w-24 shrink-0" :aria-label="label" />
     <b v-if="percent !== undefined" class="tabular-nums text-highlighted">{{ percent }}%</b>
     <span v-if="line" class="truncate">{{ line }}</span>
   </div>
@@ -37,8 +38,8 @@ withDefaults(
       <slot name="actions" />
     </div>
     <div class="flex items-center gap-3">
-      <span class="text-2xl font-bold tabular-nums text-highlighted w-16 shrink-0">{{ percent === undefined ? '—' : `${percent}%` }}</span>
-      <UProgress :model-value="percent ?? null" :color="color" size="md" class="flex-1" />
+      <span v-if="percent !== undefined" class="text-2xl font-bold tabular-nums text-highlighted w-16 shrink-0">{{ percent }}%</span>
+      <UProgress :model-value="percent ?? null" :color="color" size="md" class="flex-1" :aria-label="label" />
     </div>
     <div class="flex flex-wrap items-baseline gap-x-4 gap-y-1 text-sm text-muted">
       <span v-if="line" class="tabular-nums">{{ line }}</span>
