@@ -82,8 +82,18 @@ export async function notInTargetCountOf(ctx: QueryCtx, units: Doc<'units'>[]): 
   return counts.reduce((sum, n) => sum + n, 0);
 }
 
+async function progressOfLeasedJob(ctx: QueryCtx, jobId: Id<'jobs'>): Promise<Doc<'jobProgress'> | undefined> {
+  const job = await ctx.db.get(jobId);
+  if (job?.status !== 'leased') return undefined;
+  const progress = await ctx.db
+    .query('jobProgress')
+    .withIndex('by_job', (q) => q.eq('jobId', jobId))
+    .first();
+  return progress ?? undefined;
+}
+
 /** A pending Rendition of one of the Unit's files, with its job's progress (the Unit row's Preparing state). */
-async function preparationOf(ctx: QueryCtx, unitId: Id<'units'>): Promise<UnitRow['preparation']> {
+export async function preparationOf(ctx: QueryCtx, unitId: Id<'units'>): Promise<UnitRow['preparation']> {
   const links = await ctx.db
     .query('fileUnits')
     .withIndex('by_unit', (q) => q.eq('unitId', unitId))
@@ -95,10 +105,7 @@ async function preparationOf(ctx: QueryCtx, unitId: Id<'units'>): Promise<UnitRo
       .filter((q) => q.eq(q.field('state'), 'pending'))
       .first();
     if (!rendition) continue;
-    const progress = await ctx.db
-      .query('jobProgress')
-      .withIndex('by_job', (q) => q.eq('jobId', rendition.jobId))
-      .first();
+    const progress = await progressOfLeasedJob(ctx, rendition.jobId);
     return {
       renditionId: rendition._id,
       steps: rendition.steps.filter((step) => step !== 'none'),
@@ -208,6 +215,18 @@ export async function activeDownloadsOf(ctx: QueryCtx, units: Doc<'units'>[]): P
     count: downloads.length,
     ...(fraction !== undefined ? { fraction } : {}),
     ...(speeds.length > 0 ? { bytesPerSec: speeds.reduce((sum, d) => sum + d.bytesPerSec!, 0) } : {}),
+  };
+}
+
+export async function activePreparationsOf(ctx: QueryCtx, units: Doc<'units'>[]): Promise<WorkSummary['activePreparations']> {
+  const preparing = units.filter((unit) => unit.derivedState === 'preparing');
+  const found = await Promise.all(preparing.map((unit) => preparationOf(ctx, unit._id)));
+  const byRendition = new Map(found.flatMap((preparation) => (preparation ? [[preparation.renditionId, preparation] as const] : [])));
+  if (byRendition.size === 0) return undefined;
+  const reported = [...byRendition.values()].flatMap((preparation) => (preparation.fraction === undefined ? [] : [preparation.fraction]));
+  return {
+    count: byRendition.size,
+    ...(reported.length > 0 ? { fraction: reported.reduce((sum, fraction) => sum + fraction, 0) / reported.length } : {}),
   };
 }
 

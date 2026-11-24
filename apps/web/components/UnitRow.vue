@@ -8,7 +8,7 @@
 import type { UnitRow } from '@omnarr/contracts';
 
 import { downloadLine } from '~/lib/downloads';
-import { preparingLine } from '~/lib/preparation';
+import { unitPreparingLine } from '~/lib/preparingProgress';
 import { formatAirDate, type RowActionKind, unitDetail, unitRowAction, upgradingTag } from '~/lib/unitStates';
 
 const props = defineProps<{ unit: UnitRow; busy?: boolean }>();
@@ -17,7 +17,7 @@ const emit = defineEmits<{ action: [kind: RowActionKind] }>();
 const action = computed(() => unitRowAction(props.unit));
 const upgrading = computed(() => upgradingTag(props.unit));
 const title = computed(() => props.unit.title ?? `Episode ${props.unit.tmdbEpisode}`);
-const prep = computed(() => (props.unit.preparation ? preparingLine(props.unit.preparation) : undefined));
+const prep = computed(() => (props.unit.preparation ? unitPreparingLine(props.unit.preparation) : undefined));
 // The running download's one-line progress, while the Unit is grabbed or downloading.
 const dl = computed(() => (props.unit.download && !props.unit.cancelRequested ? downloadLine(props.unit.download) : undefined));
 const aired = computed(() =>
@@ -50,12 +50,12 @@ const iconOnly = computed(() => primary.value?.kind === 'jellyfin');
         <UBadge v-if="unit.openIssue" size="sm" color="error" variant="subtle" icon="i-lucide-triangle-alert" label="Issue" />
         <UBadge v-if="upgrading" size="sm" color="info" variant="subtle" icon="i-lucide-arrow-up-circle" :label="upgrading" />
       </div>
-      <div v-if="prep" class="flex items-center gap-2 text-xs text-muted">
+      <div v-if="prep" class="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted">
         <template v-if="prep.percent !== undefined">
-          <UProgress :model-value="prep.percent" color="secondary" size="xs" class="w-24 shrink-0" />
+          <UProgress :model-value="prep.percent" color="secondary" size="xs" class="w-24 shrink-0" :aria-label="prep.text" />
           <b class="tabular-nums text-highlighted">{{ prep.percent }}%</b>
         </template>
-        <span class="truncate">{{ prep.text }}</span>
+        <span class="min-w-0">{{ prep.text }}</span>
       </div>
       <DownloadProgress v-else-if="dl && unit.download?.stage !== 'postProcessing'" variant="inline" :percent="dl.percent" :line="dl.line" />
       <p v-else-if="dl" class="text-xs text-muted">{{ dl.line }}</p>

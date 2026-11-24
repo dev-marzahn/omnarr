@@ -9,6 +9,7 @@ import {
   jellyfinLibrariesLine,
   jellyfinStateLabel,
   jellyfinVersionLine,
+  librarySizeView,
   RERUN_PROMPT,
   rerunErrorText,
   setupStepRows,
@@ -414,6 +415,32 @@ describe('the free-space card', () => {
       { label: 'originals', free: '3.2 TB free', writable: false },
       { label: 'library/movies', free: '1.0 TB free', writable: true },
     ]);
+  });
+
+  describe('the Library rows', () => {
+    const size = (totalBytes: number, seriesBytes: number, moviesBytes: number) => ({ totalBytes, seriesBytes, moviesBytes, measuredAt: 0 });
+
+    test('the total, then Series and Movies under it, and when it was measured', () => {
+      const view = librarySizeView(size(4.2e12, 3e12, 1.2e12));
+      expect(view.rows).toEqual([
+        { label: 'Library', size: '4.2 TB used', part: false },
+        { label: 'Series', size: '3.0 TB', part: true },
+        { label: 'Movies', size: '1.2 TB', part: true },
+      ]);
+      expect(view.note).toMatch(/^Measured .+\. Counts only the files omnarr tracks\.$/);
+    });
+
+    test('an empty library shows 0 B, not a blank', () => {
+      expect(librarySizeView(size(0, 0, 0)).rows.map((row) => row.size)).toEqual(['0 B used', '0 B', '0 B']);
+    });
+
+    test('while it is measured: one Library line', () => {
+      expect(librarySizeView(undefined)).toEqual({ rows: [{ label: 'Library', size: 'measuring…', part: false }], note: '' });
+    });
+
+    test('a failed read: no rows, one line', () => {
+      expect(librarySizeView(undefined, true)).toEqual({ rows: [], note: "Couldn't measure the library's size. Open System again to retry." });
+    });
   });
 
   test('no warning when every area is writable and on one filesystem', () => {

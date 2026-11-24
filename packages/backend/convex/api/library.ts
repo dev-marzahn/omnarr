@@ -26,6 +26,7 @@ import { adminAction, adminMutation, adminQuery } from '../lib/functions';
 import { start as startDelete } from '../library/deleteWork';
 import {
   activeDownloadsOf,
+  activePreparationsOf,
   notInTargetCountOf,
   openIssuesByUnit,
   seedingByUnit,
@@ -85,16 +86,13 @@ export async function subscribeWork(
   return result;
 }
 
-/**
- * A WorkSummary's display additions: `activeDownloads` when a
- * Download runs, the stored poster, and on the Work page the
- * backdrop and the overview.
- */
 async function extrasOf(ctx: QueryCtx, work: Doc<'works'>, units: Doc<'units'>[], page: 'list' | 'detail') {
   const active = await activeDownloadsOf(ctx, units);
+  const preparing = await activePreparationsOf(ctx, units);
   const { meta, posterUrl, backdropUrl } = await workImages(ctx, work._id);
   return {
     ...(active ? { activeDownloads: active } : {}),
+    ...(preparing ? { activePreparations: preparing } : {}),
     ...(posterUrl ? { posterUrl } : {}),
     ...(page === 'detail' && backdropUrl ? { backdropUrl } : {}),
     ...(page === 'detail' && meta?.overview ? { overview: meta.overview } : {}),

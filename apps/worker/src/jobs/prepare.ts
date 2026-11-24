@@ -79,19 +79,25 @@ const CODECS: Readonly<Record<string, string>> = {
 const CONTAINERS: Readonly<Record<string, string>> = { matroska: 'Matroska', mkv: 'Matroska', mp4: 'MP4', webm: 'WebM', mpegts: 'MPEG-TS', avi: 'AVI' };
 const label = (table: Readonly<Record<string, string>>, name: string | undefined) => (name ? (table[name] ?? name.toUpperCase()) : '?');
 
-/** The progress detail for the plan's most expensive step: "Video transcode HEVC → H.264", "Remux Matroska → MP4". */
-export function progressDetail(plan: Comparison): string {
+export const PREPARE_STEP = {
+  checkingSource: 'Checking the file',
+  subtitles: 'Subtitle extraction',
+  checkingOutput: 'Checking the new file',
+  moving: 'Moving into the library',
+} as const;
+
+export function mainRunDetail(plan: Comparison): string {
   const transcoded = (kind: 'video' | 'audio') => plan.streams.find((stream) => stream.kind === kind && stream.action === 'transcode');
   const [step] = plan.steps;
   if (step === 'video') {
     const row = transcoded('video');
-    return `Video transcode ${label(CODECS, row?.from)} → ${label(CODECS, row?.to)}`;
+    return `Video conversion ${label(CODECS, row?.from)} → ${label(CODECS, row?.to)}`;
   }
   if (step === 'audio') {
     const row = transcoded('audio');
-    return `Audio transcode ${label(CODECS, row?.from)} → ${label(CODECS, row?.to)}`;
+    return `Audio conversion ${label(CODECS, row?.from)} → ${label(CODECS, row?.to)}`;
   }
-  if (step === 'subtitle') return 'Subtitle extraction';
+  if (step === 'subtitle') return PREPARE_STEP.subtitles;
   return `Remux ${label(CONTAINERS, plan.container.from)} → ${label(CONTAINERS, plan.container.to)}`;
 }
 
@@ -236,6 +242,7 @@ function handle(
      * a sidecar this restore already moved in.
      */
     const restore = async (original: string, probe: ProbeSummary): Promise<Prepared> => {
+      progress(0, PREPARE_STEP.moving);
       const ext = extname(original);
       const outputPath = join(outputFolder, nameFor(probe, ext));
       const base = basename(outputPath, ext);
@@ -248,6 +255,7 @@ function handle(
 
     /** A full result for an output found in place, with what is left of the swap finished. */
     const resumed = async (outputPath: string, outputProbe: ProbeSummary, leftover: string | undefined): Promise<Prepared> => {
+      progress(0, PREPARE_STEP.moving);
       const plan = leftover
         ? compare(await deps.probe(leftover, signal), target)
         : (await exists(kept))
@@ -300,7 +308,7 @@ function handle(
     };
 
     try {
-      // 2. Resuming: the job's own earlier work, by names it computes from the payload.
+      progress(0, PREPARE_STEP.checkingSource);
       const atSource = await exists(sourcePath);
       const isSource = atSource !== undefined && inodeOf(atSource) === payload.sourceInode;
       // A kept original still under originals/ that fits is restored, before any resume rule: a restore cut short runs again.
@@ -326,19 +334,24 @@ function handle(
       if (plan.streams.some((stream) => stream.reason === 'dvNoFallback'))
         throw new JobFailure('transcodeFailed', "Dolby Vision without an HDR10 base layer can't be converted on CPU.");
 
-      // 1. Free space in staging, now that the plan is known.
       const needed = estimate((await stat(source)).size, sourceProbe, plan, target) + DEFAULT_LIMITS.freeSpaceMarginBytes;
       const free = await (deps.freeBytes ?? freeBytesAt)(layout.staging);
       if (free < needed) throw new JobFailure('diskFull', `Preparation needs ${needed} bytes in staging/ (with the margin); ${free} bytes free.`);
       await mkdir(staging, { recursive: true });
 
-      // 3. Subtitles, in one run.
-      const subtitles = await extractSubtitles({ source, comparison: plan, sourceProbe, outDir: join(staging, 'subs'), logPath, signal });
+      const subtitles = await extractSubtitles({
+        source,
+        comparison: plan,
+        sourceProbe,
+        outDir: join(staging, 'subs'),
+        logPath,
+        signal,
+        onProgress: (fraction) => progress(fraction, PREPARE_STEP.subtitles),
+      });
 
-      // 4. The main run.
       const ext = `.${outputContainer(plan, target)}`;
       const out = join(staging, `out${ext}`);
-      const detail = progressDetail(plan);
+      const detail = mainRunDetail(plan);
       progress(0, detail);
       await deps.run({
         command: 'ffmpeg',
@@ -350,12 +363,11 @@ function handle(
         onProgress: (fraction) => progress(fraction, detail),
       });
 
-      // 5. The check.
+      progress(0, PREPARE_STEP.checkingOutput);
       const outputProbe = await deps.probe(out, signal);
       checkOutput(sourceProbe, outputProbe, target, plan);
-      progress(1, detail);
 
-      // 6. The swap: for `keep` the source moves out first; then the sidecars, then the file.
+      progress(0, PREPARE_STEP.moving);
       const outputPath = join(outputFolder, nameFor(outputProbe, ext));
       const base = basename(outputPath, ext);
       if (keep && source !== kept) await moveToOriginals(source);
@@ -376,7 +388,6 @@ function handle(
       if (!keep) await removeSource(source, outputPath);
       if (replaces) await removeSource(replaces, outputPath);
 
-      // 7. The result.
       const info = await stat(outputPath);
       return {
         class: 'prepare',

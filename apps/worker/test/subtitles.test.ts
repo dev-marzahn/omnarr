@@ -39,7 +39,7 @@ const extract = (index: number, from: string, to: 'srt' | 'ass' = 'srt'): Row =>
   reason: 'embeddedSubtitle',
 });
 
-const run = (comparison: Comparison) =>
+const run = (comparison: Comparison, extra: { onProgress?: (fraction: number) => void; sourceProbe?: ProbeSummary } = {}) =>
   extractSubtitles({
     source: SOURCE,
     comparison,
@@ -47,6 +47,7 @@ const run = (comparison: Comparison) =>
     outDir: join(dir, 'subs'),
     logPath: join(dir, 'ffmpeg.log'),
     signal: new AbortController().signal,
+    ...extra,
   });
 const ffmpegRuns = async () => (await readFile(join(dir, 'ffmpeg.log'), 'utf8')).match(/^\$ ffmpeg /gm)?.length ?? 0;
 
@@ -106,9 +107,28 @@ describe.skipIf(!mediaTools('ffmpeg'))('extractSubtitles', () => {
     expect(vobsub.burn).toEqual({ path: join(dir, 'subs', 'burn.mkv'), kind: 'image' });
   });
 
+  test('the extraction reports 0 at its start, then fractions of the source duration', async () => {
+    const fractions: number[] = [];
+    await run(comparisonOf(extract(2, 'subrip'), extract(3, 'subrip')), { onProgress: (fraction) => fractions.push(fraction) });
+    expect(fractions[0]).toBe(0);
+    expect(fractions.slice(1).some((fraction) => fraction > 0 && fraction <= 1)).toBe(true);
+    expect(fractions).toEqual([...fractions].sort((a, b) => a - b));
+  });
+
+  test('without a source duration the extraction reports only its start, at 0', async () => {
+    const { durationMs: _unknown, ...withoutDuration } = sourceProbe;
+    const fractions: number[] = [];
+    await run(comparisonOf(extract(2, 'subrip')), { onProgress: (fraction) => fractions.push(fraction), sourceProbe: withoutDuration });
+    expect(fractions).toEqual([0]);
+  });
+
   test('nothing to extract runs nothing', async () => {
-    const result = await run(comparisonOf({ index: 6, kind: 'subtitle', action: 'drop', from: 'dvd_subtitle', reason: 'imageSubtitle' }));
+    const fractions: number[] = [];
+    const result = await run(comparisonOf({ index: 6, kind: 'subtitle', action: 'drop', from: 'dvd_subtitle', reason: 'imageSubtitle' }), {
+      onProgress: (fraction) => fractions.push(fraction),
+    });
     expect(result).toEqual({ sidecars: [], dropped: [{ language: 'fr', forced: false }] });
+    expect(fractions).toEqual([]);
     await expect(readFile(join(dir, 'ffmpeg.log'), 'utf8')).rejects.toThrow();
   });
 });

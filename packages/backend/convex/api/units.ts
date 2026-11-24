@@ -39,7 +39,7 @@ import { recomputeUnits } from '../lib/derivedState';
 import { adminMutation, adminQuery } from '../lib/functions';
 import { mightBeThisEpisode as mightBe } from '../library/misread';
 import { fileNameOf } from '../library/naming';
-import { downloadOf, isSeeding, seedingOf } from '../library/read';
+import { downloadOf, isSeeding, preparationOf, seedingOf } from '../library/read';
 import { stillUrlOf, workImages } from '../metadata/images';
 import { blocklistEntryFor } from '../pipeline/blocklist';
 import { cancelGrab as cancel } from '../pipeline/grabs';
@@ -293,6 +293,7 @@ export const timeline = adminQuery({
     const last = unit.lastSearchAttemptId && !runAttempts.has(unit.lastSearchAttemptId) ? await ctx.db.get(unit.lastSearchAttemptId) : null;
     const itemPath = await jellyfinItemPath(ctx, unitId, await jellyfinServerId(ctx));
     const active = await downloadOf(ctx, unit.activeGrabId ? await ctx.db.get(unit.activeGrabId) : null);
+    const preparation = await preparationOf(ctx, unitId);
     const { posterUrl } = await workImages(ctx, work._id);
     const stillUrl = await stillUrlOf(ctx, unitId);
     return {
@@ -300,6 +301,14 @@ export const timeline = adminQuery({
       ...(posterUrl ? { posterUrl } : {}),
       ...(stillUrl ? { stillUrl } : {}),
       ...(active ? { download: active } : {}),
+      ...(preparation
+        ? {
+            preparation: {
+              ...(preparation.fraction === undefined ? {} : { fraction: preparation.fraction }),
+              ...(preparation.detail === undefined ? {} : { detail: preparation.detail }),
+            },
+          }
+        : {}),
       ...(seeding ? { seeding: { ...seedingOf(seeding.download), releaseTitle: seeding.releaseTitle } } : {}),
       files: await filesOf(ctx, unit, work),
       ...(itemPath ? { jellyfinItemPath: itemPath } : {}),
