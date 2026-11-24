@@ -31,6 +31,7 @@ export type ExtractRequest = {
   logPath: string;
   signal: AbortSignal;
   stallMs?: number;
+  onProgress?: (fraction: number) => void;
 };
 
 const ASS_CODECS = new Set(['ass', 'ssa']);
@@ -72,12 +73,16 @@ export async function extractSubtitles(request: ExtractRequest): Promise<Extract
 
   if (tracks.length > 0) {
     await mkdir(request.outDir, { recursive: true });
+    request.onProgress?.(0);
+    const { durationMs } = request.sourceProbe;
     await runChild({
       command: 'ffmpeg',
       args: subtitleArgs(request.source, tracks, request.outDir),
       signal: request.signal,
       logPath: request.logPath,
       ...(request.stallMs === undefined ? {} : { stallMs: request.stallMs }),
+      ...(durationMs === undefined ? {} : { durationMs }),
+      ...(request.onProgress ? { onProgress: request.onProgress } : {}),
     });
   }
   return { sidecars, ...(burn ? { burn } : {}), dropped };

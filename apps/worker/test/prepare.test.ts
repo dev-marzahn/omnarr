@@ -22,7 +22,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'vite-plus/test';
 
 import { dataLayout, type DataLayout } from '../src/fs/layout.ts';
 import { inodeOf } from '../src/fs/space.ts';
-import { type PrepareDeps, prepareHandler, progressDetail } from '../src/jobs/prepare.ts';
+import { mainRunDetail, type PrepareDeps, prepareHandler } from '../src/jobs/prepare.ts';
 import { checkOutput, runChild } from '../src/media/prepare.ts';
 import { probe, summarize } from '../src/media/probe.ts';
 import { JobFailure } from '../src/runtime/lease.ts';
@@ -79,6 +79,8 @@ const handler = (deps: Partial<PrepareDeps> = {}) =>
     ...deps,
   });
 const ctx = (signal = new AbortController().signal) => ({ signal, progress: (fraction: number, detail?: string) => void progressed.push([fraction, detail]) });
+
+const stepsReported = () => progressed.map(([, detail]) => detail).filter((detail, i, all) => detail !== all[i - 1]);
 
 /** A fixture copied into the library (or anywhere) under a name. */
 async function place(fixture: string, folder: string, name: string): Promise<string> {
@@ -184,10 +186,10 @@ describe('checkOutput', () => {
     expect(check(out({ container: 'matroska' }))).toMatchObject({ code: 'transcodeFailed', detail: "Output check failed: it doesn't fit the target (remux)." });
   });
 
-  test("the progress detail names the plan's most expensive step", () => {
-    expect(progressDetail(plan)).toBe('Audio transcode E-AC-3 → AAC');
-    expect(progressDetail(compare({ ...SOURCE, streams: [video, audio('aac', 2)] }, TARGET))).toBe('Remux Matroska → MP4');
-    expect(progressDetail(compare({ ...SOURCE, streams: [{ ...video, codec: 'hevc' }] }, TARGET))).toBe('Video transcode HEVC → H.264');
+  test("the main run's detail names the plan's most expensive step", () => {
+    expect(mainRunDetail(plan)).toBe('Audio conversion E-AC-3 → AAC');
+    expect(mainRunDetail(compare({ ...SOURCE, streams: [video, audio('aac', 2)] }, TARGET))).toBe('Remux Matroska → MP4');
+    expect(mainRunDetail(compare({ ...SOURCE, streams: [{ ...video, codec: 'hevc' }] }, TARGET))).toBe('Video conversion HEVC → H.264');
   });
 
   test('an output without the planned audio stream fails', () => {
@@ -236,9 +238,35 @@ describe.runIf(mediaTools('ffmpeg', 'ffprobe'))('the prepare job (real ffmpeg)',
     expect(result.probe.streams.filter((s) => s.kind === 'audio').map((s) => s.kind === 'audio' && [s.codec, s.channels])).toEqual([['aac', 2]]);
     expect(await ls(season())).toEqual([`${OUTPUT}.de.srt`, `${OUTPUT}.en.srt`, `${OUTPUT}.mp4`]);
     expect((await readFile(join(season(), `${OUTPUT}.en.srt`), 'utf8')).length).toBeGreaterThan(0);
-    expect(progressed.at(-1)).toEqual([1, 'Audio transcode E-AC-3 → AAC']);
     expect(runs[0]!.slice(0, 2)).toEqual(['-hide_banner', '-nostdin']);
     expect(await stagingLeft()).toEqual([]);
+  });
+
+  test('every step reports its detail, in order, each starting at 0', async () => {
+    const source = await place('webdl.mkv', season(), SOURCE_NAME);
+    full(await handler()(await job(source), ctx()));
+    expect(stepsReported()).toEqual([
+      'Checking the file',
+      'Subtitle extraction',
+      'Audio conversion E-AC-3 → AAC',
+      'Checking the new file',
+      'Moving into the library',
+    ]);
+    for (const step of stepsReported()) expect(progressed.find(([, detail]) => detail === step)).toEqual([0, step]);
+    const fractionsOf = (step: string) => progressed.filter(([, detail]) => detail === step).map(([fraction]) => fraction);
+    expect(fractionsOf('Subtitle extraction').some((fraction) => fraction > 0)).toBe(true);
+    expect(fractionsOf('Audio conversion E-AC-3 → AAC').some((fraction) => fraction > 0)).toBe(true);
+  });
+
+  test('without a source duration every step stays at 0', async () => {
+    const source = await place('webdl.mkv', season(), SOURCE_NAME);
+    const withoutDuration: PrepareDeps['probe'] = async (path, signal) => {
+      const { durationMs: _unknown, ...summary } = await probe(path, signal);
+      return summary;
+    };
+    full(await handler({ probe: withoutDuration })(await job(source), ctx()));
+    expect(stepsReported()).toHaveLength(5);
+    expect(progressed.every(([fraction]) => fraction === 0)).toBe(true);
   });
 
   test('an output that fails the check is transcodeFailed, its ffmpeg.log is uploaded, and the library is unchanged', async () => {
@@ -249,7 +277,7 @@ describe.runIf(mediaTools('ffmpeg', 'ffprobe'))('the prepare job (real ffmpeg)',
     expect(error.code).toBe('transcodeFailed');
     expect(error.detail).toMatch(/^Output check failed: its duration is [\d.]+ s, the source's 8 s\.$/);
     expect(error.artifactStorageId).toBe('storage-1');
-    expect(progressed[0]).toEqual([0, 'Video transcode HEVC → H.264']);
+    expect(stepsReported()).toEqual(['Checking the file', 'Video conversion HEVC → H.264', 'Checking the new file']);
     expect(backend.calls.find((call) => call.fn === 'artifactUploadUrl')?.args).toEqual({ jobId: 'job1', leaseEpoch: 1 });
     expect(uploads).toHaveLength(1);
     expect(uploads[0]!.url).toBe('http://convex.invalid/upload/1');
@@ -275,6 +303,7 @@ describe.runIf(mediaTools('ffmpeg', 'ffprobe'))('the prepare job (real ffmpeg)',
     const source = await place('fits.mp4', season(), 'Show (2019) - S01E02 - Pilot [AMZN][WEBDL-1080p][AAC 2.0][h264]-GRP.mp4');
     expect(await handler()(await job(source), ctx())).toEqual({ class: 'prepare', noChange: true });
     expect(runs).toEqual([]);
+    expect(progressed).toEqual([[0, 'Checking the file']]);
   });
 
   test('keep moves the source and its sidecars to originals/ first, and the prepared file takes its place', async () => {
@@ -317,9 +346,11 @@ describe.runIf(mediaTools('ffmpeg', 'ffprobe'))('the prepare job (real ffmpeg)',
       const prepared = await job(source);
       const first = full(await handler()(prepared, ctx()));
       runs = [];
+      progressed = [];
       const again = full(await handler()(prepared, ctx()));
       expect(runs).toEqual([]);
       expect(again).toEqual({ ...first, steps: [], encoder: 'unknown' });
+      expect(stepsReported()).toEqual(['Checking the file', 'Moving into the library']);
     });
 
     test('the output in place and the source still there (a crash before its removal): the swap is finished, nothing runs', async () => {
@@ -399,6 +430,10 @@ describe.runIf(mediaTools('ffmpeg', 'ffprobe'))('the prepare job (real ffmpeg)',
       expect(await ls(originalsSeason())).toEqual([]);
       expect(runs).toEqual([]);
       expect(await stagingLeft()).toEqual([]);
+      expect(progressed).toEqual([
+        [0, 'Checking the file'],
+        [0, 'Moving into the library'],
+      ]);
     });
 
     test('across filesystems (EXDEV): copied into place, then the original deleted; no .partial is left', async () => {

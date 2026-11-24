@@ -8,11 +8,17 @@
 import type { UnitRow, WorkFileRow } from '@omnarr/contracts';
 
 import { workFileRows } from '~/lib/preparation';
+import { filePreparingText } from '~/lib/preparingProgress';
 
 const props = defineProps<{ files: WorkFileRow[]; units: UnitRow[] }>();
 const emit = defineEmits<{ prepare: [unit: UnitRow] }>();
-const rows = computed(() => workFileRows(props.files, props.units));
 const unitOf = computed(() => new Map(props.units.map((unit) => [unit.unitId, unit])));
+const rows = computed(() =>
+  workFileRows(props.files, props.units).map((row) => {
+    const preparation = unitOf.value.get(row.unitId)?.preparation;
+    return row.preparing && preparation ? { ...row, preparing: filePreparingText(preparation) } : row;
+  }),
+);
 </script>
 
 <template>

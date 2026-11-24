@@ -339,13 +339,14 @@ describe('the pipeline on the real stack', () => {
     const progress = await waitFor(
       'the transcode to report progress',
       async () =>
-        rows<{ jobId: string; fraction: number; detail?: string }>(d.env, 'jobProgress').find((row) => row.jobId === rendition.jobId && row.fraction > 0),
+        rows<{ jobId: string; fraction: number; detail?: string }>(d.env, 'jobProgress').find(
+          (row) => row.jobId === rendition.jobId && row.detail === 'Video conversion HEVC → H.264' && row.fraction > 0,
+        ),
       120_000,
       250,
     );
     killWorker();
     measured(`killed the worker at ${Math.round(progress.fraction * 100)} % (${progress.detail})`);
-    expect(progress.detail).toBe('Video transcode HEVC → H.264');
     expect(progress.fraction).toBeLessThan(1);
     // The worker died with the job unfinished: still leased to it, and the original still published.
     const leased = rows<JobRow & { leaseExpiresAt?: number }>(d.env, 'jobs').find((job) => job._id === rendition.jobId);

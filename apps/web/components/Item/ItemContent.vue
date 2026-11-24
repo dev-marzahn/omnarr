@@ -21,6 +21,7 @@ import { downloadLine, seedingLine } from '~/lib/downloads';
 import { issueExplanation, issueTitle } from '~/lib/issues';
 import { misreadRows } from '~/lib/misread';
 import { fileRows, preparationEntries } from '~/lib/preparation';
+import { preparingProgress } from '~/lib/preparingProgress';
 import {
   pickedReleaseFailed,
   playText,
@@ -40,6 +41,7 @@ const route = useRoute();
 const toast = useToast();
 
 const preparation = computed(() => preparationEntries(props.timeline.events));
+const preparing = computed(() => (props.timeline.preparation ? preparingProgress(props.timeline.preparation) : undefined));
 const others = computed(() => preparation.value.others.filter((event) => event.stage !== 'search' || event.kind !== 'stageStarted'));
 const order = ref<'newest' | 'oldest'>('newest');
 const cards = computed(() => timelineCards(props.timeline.runs, preparation.value.entries, order.value));
@@ -147,6 +149,7 @@ const summary = computed(() => {
     :release="timeline.seeding?.releaseTitle"
     color="success"
   />
+  <DownloadProgress v-if="preparing" :stage="preparing.stage" :line="preparing.text" :percent="preparing.percent" color="secondary" />
 
   <ResponsiveTabs v-model="tab" :items="tabs" class="-mt-2 sm:border-b sm:border-default" />
 
@@ -206,7 +209,7 @@ const summary = computed(() => {
 
     <template v-for="card in cards" :key="card.key">
       <TimelineRun v-if="'run' in card" :run="card.run" :number="card.number" :recovered="card.recovered" />
-      <TimelinePreparation v-else :entry="card.entry" :unit-id="unitId" />
+      <TimelinePreparation v-else :entry="card.entry" :unit-id="unitId" :progress="card.entry.state === 'pending' ? preparing : undefined" />
     </template>
     <UEmpty
       v-if="cards.length === 0 && !timeline.lastSearch"
