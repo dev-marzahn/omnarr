@@ -1,5 +1,6 @@
 // The wrappers every public function is built from: the
-// four, plus `adminAction` for admin calls that need HTTP (metadata and indexers).
+// four, plus `adminAction` for admin calls that need HTTP (metadata and indexers)
+// or read a whole table in pages (the library's size).
 // Each checks the caller, takes Zod schemas from @omnarr/contracts for `args`
 // and `returns`, requires `returns`, and marks the function with `__wrapped`
 // for api.test.ts.
@@ -70,7 +71,11 @@ function marked<Builder extends (definition: never) => object>(kind: WrapperKind
 
 export const adminQuery = marked('adminQuery', rawAdminQuery);
 export const adminMutation = marked('adminMutation', rawAdminMutation);
-/** For admin calls that make an outside HTTP request: metadata (TMDB) and indexers. */
+/**
+ * For admin calls that make an outside HTTP request (metadata, TMDB, and
+ * indexers), or that read a whole table in pages, too much for one query
+ * (`system.librarySize`).
+ */
 export const adminAction = marked('adminAction', rawAdminAction);
 export const workerQuery = marked('workerQuery', rawWorkerQuery);
 export const workerMutation = marked('workerMutation', rawWorkerMutation);

@@ -66,6 +66,7 @@ import type * as library_deleteWork from "../library/deleteWork.js";
 import type * as library_misread from "../library/misread.js";
 import type * as library_naming from "../library/naming.js";
 import type * as library_read from "../library/read.js";
+import type * as library_size from "../library/size.js";
 import type * as library_works from "../library/works.js";
 import type * as mapping_animeLists from "../mapping/animeLists.js";
 import type * as mapping_animeListsParse from "../mapping/animeListsParse.js";
@@ -194,6 +195,7 @@ declare const fullApi: ApiFromModules<{
   "library/misread": typeof library_misread;
   "library/naming": typeof library_naming;
   "library/read": typeof library_read;
+  "library/size": typeof library_size;
   "library/works": typeof library_works;
   "mapping/animeLists": typeof mapping_animeLists;
   "mapping/animeListsParse": typeof mapping_animeListsParse;

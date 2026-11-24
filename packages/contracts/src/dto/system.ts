@@ -110,6 +110,14 @@ export type WorkerBanner = z.infer<typeof WorkerBanner>;
 
 export const IndexerStatusRow = z.object({ indexerId: zid('indexers'), name: z.string(), enabled: z.boolean(), health: IndexerHealth }).strict();
 
+/**
+ * `system.librarySize`: the bytes the library's tracked files take, each
+ * inode once (a hardlink or a second row is the same data), by Work kind.
+ * Measured when asked, not live: `measuredAt` says when.
+ */
+export const LibrarySize = z.object({ totalBytes: z.number(), seriesBytes: z.number(), moviesBytes: z.number(), measuredAt: z.number() }).strict();
+export type LibrarySize = z.infer<typeof LibrarySize>;
+
 /** `system.status`. */
 export const SystemStatus = z
   .object({
