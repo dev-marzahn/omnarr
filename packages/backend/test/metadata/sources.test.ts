@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vite-plus/tes
 
 import { api, components, internal } from '../../convex/_generated/api';
 import type { Id } from '../../convex/_generated/dataModel';
+import { RESYNC_BATCH } from '../../convex/mapping/listStore';
 import xml from '../fixtures/animeLists/anime-list.xml?raw';
 import blackLagoonShape from '../fixtures/xem/blackLagoonShape.json';
 import { asAdmin, drainPool, fetchXem, seedLibraries, setup, useMetadataFakes, type Backend, type FakeRequests, type Libraries } from '../setup';
@@ -363,15 +364,16 @@ describe("XEM's names, the xemNames source", () => {
     expect(await openIssues()).toEqual([]);
   });
 
-  test('a first fetch that changes thousands of shows resyncs the Works it names', async () => {
+  test('a first fetch that changes more shows than one batch holds resyncs the Works it names', async () => {
     const { workId } = await subscribe('900003');
     await runPool();
-    const others = Object.fromEntries(Array.from({ length: 3000 }, (_, i) => [7800000 + i, [{ [`Other Show ${i}`]: -1 }]]));
+    const otherShowCount = 2 * RESYNC_BATCH;
+    const others = Object.fromEntries(Array.from({ length: otherShowCount }, (_, i) => [7800000 + i, [{ [`Other Show ${i}`]: -1 }]]));
     useMetadataFakes({ xem: { havemap: [7700003], allNames: { result: 'success', data: { ...others, 7700003: [{ Northbound: -1 }] }, message: '' } } });
     await fetchHavemap();
     await runPool();
     await fetchXemNames();
-    expect(await storedNames()).toHaveLength(3001);
+    expect(await storedNames()).toHaveLength(otherShowCount + 1);
     expect(await syncing(workId)).toBe(true);
     await runPool();
     expect(await xemAliases(workId)).toEqual([{ title: 'Northbound', sceneSeason: undefined }]);
