@@ -54,12 +54,14 @@ function bracketedRange(title: string): string {
   return replaceMatch(title, match, `(${match[1]}-${match[2]})`);
 }
 
-const YEAR_OR_RESOLUTION = `(?:${YEAR_DIGITS}|${Resolution.options.map((option) => option.value).join('|')})(?!\\d)`;
+const RESOLUTION_DIGITS = `(?:${Resolution.options.map((option) => option.value).join('|')})`;
+const YEAR_OR_RESOLUTION = `(?:${YEAR_DIGITS}|${RESOLUTION_DIGITS})(?!\\d)`;
 const NOT_YEAR_OR_RESOLUTION = `(?!${YEAR_OR_RESOLUTION})`;
 const FURTHER_EPISODE_MARK = `(?:-E?|E)${NOT_YEAR_OR_RESOLUTION}`;
 const optionalVersion = (name: string): string => `(?:${versionCapture(name)})?`;
 const SEASON_DASH = '\\bS(?<season>[1-9]\\d?)-';
-const EPISODES_END = `(?![\\dp]|e\\d|-e\\d|-${NOT_YEAR_OR_RESOLUTION}\\d)(?<dashBeforeYearOrResolution>-(?=${YEAR_OR_RESOLUTION}))?`;
+const TAIL_END = '(?![a-z\\d])';
+const EPISODES_END = `(?![\\dp]|e\\d|-e\\d|-${NOT_YEAR_OR_RESOLUTION}\\d)(?<dashBeforeResolution>-(?=${RESOLUTION_DIGITS}${TAIL_END}))?`;
 const SEASON_DASH_NUMBER_EPISODES = new RegExp(
   `${SEASON_DASH}\\d{1,4}E(?<first>\\d{1,4})(?:(?:${FURTHER_EPISODE_MARK}\\d{1,4})*${FURTHER_EPISODE_MARK}(?<last>\\d{1,4}))?${optionalVersion('lastVersion')}${EPISODES_END}`,
   'i',
@@ -99,8 +101,11 @@ function cannotBeSeasonRange(title: string, { season, first, last }: SeasonEpiso
   return last !== undefined || startsWithGroup(title) || first <= season;
 }
 
-function episodeMark({ season, first, last, version }: SeasonEpisodes): string {
-  const rangeEnd = last === undefined || last === first ? '' : `E${twoDigits(last)}`;
+const isSingleEpisode = ({ first, last }: SeasonEpisodes): boolean => last === undefined || last === first;
+
+function episodeMark(episodes: SeasonEpisodes): string {
+  const { season, first, last, version } = episodes;
+  const rangeEnd = last === undefined || isSingleEpisode(episodes) ? '' : `E${twoDigits(last)}`;
   const revision = version === undefined ? '' : `.v${version}`;
   return `S${twoDigits(season)}E${twoDigits(first)}${rangeEnd}${revision}`;
 }
@@ -115,16 +120,47 @@ const SEASON_DASH_FORMS: readonly SeasonDashForm[] = [
   { pattern: SEASON_DASH_EPISODES, accepts: (title, episodes) => isAscending(episodes) && cannotBeSeasonRange(title, episodes) },
 ];
 
+function singleSeasonDashEpisodeKeptApartFromDashedResolution(episodes: SeasonEpisodes, dashBeforeResolution: string | undefined): string {
+  if (dashBeforeResolution === undefined) return '';
+  return isSingleEpisode(episodes) ? ' ' : dashBeforeResolution;
+}
+
 function seasonDashRewrite({ pattern, accepts }: SeasonDashForm): (title: string) => string {
   return (title) => {
     const match = pattern.exec(title);
     const groups: Record<string, string | undefined> = match?.groups ?? {};
-    const { season, first, last, firstVersion, lastVersion, dashBeforeYearOrResolution } = groups;
+    const { season, first, last, firstVersion, lastVersion, dashBeforeResolution } = groups;
     if (!match || season === undefined || first === undefined || EPISODE_MARK.test(title)) return title;
     const episodes = seasonEpisodes(season, first, last, lastVersion ?? firstVersion);
     if (!accepts(title, episodes)) return title;
-    const separator = dashBeforeYearOrResolution === undefined ? '' : ' ';
+    const separator = singleSeasonDashEpisodeKeptApartFromDashedResolution(episodes, dashBeforeResolution);
     return replaceMatch(title, match, `${episodeMark(episodes)}${separator}`);
+  };
+}
+
+const SINGLE_EPISODE = `\\bS\\d{1,4}E\\d{1,4}`;
+const FURTHER_EPISODES = `(?:${FURTHER_EPISODE_MARK}\\d{1,4})`;
+const NOT_A_FOUR_DIGIT_RANGE_END = '(?<!\\d{4})';
+const OPTIONAL_MARK_VERSION = `(?:\\.?${versionCapture('version')})?`;
+
+interface DashedTailForm {
+  pattern: RegExp;
+  written: (tail: string) => string;
+}
+
+const dashedTail = (episodes: string, tail: string): RegExp => new RegExp(`(?<episodes>${episodes}${OPTIONAL_MARK_VERSION})-(?<tail>${tail})${TAIL_END}`, 'i');
+
+const DASHED_TAIL_FORMS: readonly DashedTailForm[] = [
+  { pattern: dashedTail(`${SINGLE_EPISODE}${FURTHER_EPISODES}*${NOT_A_FOUR_DIGIT_RANGE_END}`, YEAR_DIGITS), written: (year) => year },
+  { pattern: dashedTail(`${SINGLE_EPISODE}${FURTHER_EPISODES}+`, RESOLUTION_DIGITS), written: (resolution) => `${resolution}p` },
+];
+
+function dashedTailRewrite({ pattern, written }: DashedTailForm): (title: string) => string {
+  return (title) => {
+    const match = pattern.exec(title);
+    const { episodes, tail } = match?.groups ?? {};
+    if (!match || episodes === undefined || tail === undefined) return title;
+    return replaceMatch(title, match, `${episodes} ${written(tail)}`);
   };
 }
 
@@ -143,6 +179,7 @@ const TITLE_REWRITES: readonly ((title: string) => string)[] = [
   unbracketTitle,
   bracketedRange,
   ...SEASON_DASH_FORMS.map(seasonDashRewrite),
+  ...DASHED_TAIL_FORMS.map(dashedTailRewrite),
   withoutEpisodeWordAfterSxxEyy,
   moveLeadingTags,
 ];

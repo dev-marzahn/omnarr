@@ -66,9 +66,9 @@ describe('cleanup (pass 1)', () => {
     ['[Grp] Lantern Keeper S2-01-12', '[Grp] Lantern Keeper S02E01E12'],
     ['Lantern Keeper S2-01-12v2 [1080p]', 'Lantern Keeper S02E01E12.v2 [1080p]'],
     ['Lantern Keeper S2-12-01', 'Lantern Keeper S2-12-01'],
-    ['Lantern Keeper S2-01-1080p', 'Lantern Keeper S02E01 1080p'],
+    ['Lantern Keeper S2-01-1080p', 'Lantern Keeper S02E01-1080p'],
     ['Lantern.Keeper.S2-01E05-GRP', 'Lantern.Keeper.S02E05-GRP'],
-    ['Lantern Keeper S2-01E05-1080p', 'Lantern Keeper S02E05 1080p'],
+    ['Lantern Keeper S2-01E05-1080p', 'Lantern Keeper S02E05-1080p'],
     ['Lantern Keeper S2-01E05E06E07', 'Lantern Keeper S02E05E07'],
     ['Lantern Keeper S2-01E05-E06-E07', 'Lantern Keeper S02E05E07'],
     ['Lantern Keeper S2-01E07E05', 'Lantern Keeper S2-01E07E05'],
@@ -91,9 +91,61 @@ describe('cleanup (pass 1)', () => {
     ['Lantern Keeper S2-01E05-6', 'Lantern Keeper S02E05E06'],
     ['Lantern Keeper S2-01-2019', 'Lantern Keeper S02E01 2019'],
     ['Lantern Keeper S2-01-480', 'Lantern Keeper S02E01 480'],
+    ['Lantern Keeper S2-01-12-480', 'Lantern Keeper S02E01E12 480p'],
+    ['Lantern Keeper S2-01-12v2-480', 'Lantern Keeper S02E01E12.v2 480p'],
+    ['Lantern Keeper S2-01-12v2-2019', 'Lantern Keeper S02E01E12.v2 2019'],
+    ['[Grp] Lantern Keeper S2-01-480', '[Grp] Lantern Keeper S02E01 480'],
     ['[1080p] Lantern Keeper S1-10', '[1080p] Lantern Keeper S1-10'],
     ['[WEB 1080p] Lantern Keeper S1-10', '[WEB 1080p] Lantern Keeper S1-10'],
   ])('writes a season-numbered episode %s as SxxEyy only where a season range cannot be meant', (raw, cleanTitle) => {
+    expect(cleanup(raw).cleanTitle).toBe(cleanTitle);
+  });
+
+  test.each([
+    ['Show S02E01-12-480', 'Show S02E01-12 480p'],
+    ['Show S01E06E07-720', 'Show S01E06E07 720p'],
+    ['Show S01E06-E07-720', 'Show S01E06-E07 720p'],
+    ['Show S02E01-12v2-480', 'Show S02E01-12v2 480p'],
+    ['Show S02E01-12-480-GRP', 'Show S02E01-12 480p-GRP'],
+  ])('moves a dashed resolution after a range off it, as a resolution: %s', (raw, cleanTitle) => {
+    expect(cleanup(raw).cleanTitle).toBe(cleanTitle);
+  });
+
+  test.each([
+    ['Show.S01E05-2019', 'Show.S01E05 2019'],
+    ['Show S01E05v2-2019', 'Show S01E05v2 2019'],
+    ['Show S01E05-06-2019', 'Show S01E05-06 2019'],
+  ])('moves a dashed year after SxxEyy off it: %s', (raw, cleanTitle) => {
+    expect(cleanup(raw).cleanTitle).toBe(cleanTitle);
+  });
+
+  test.each([
+    ['Show S01E05-720', 'Show S01E05-720'],
+    ['[Grp] Show S01E05-720', '[Grp] Show S01E05-720'],
+    ['Show S01E701-720', 'Show S01E701-720'],
+  ])('leaves a dashed resolution after a single episode, which may be its absolute number or range end: %s', (raw, cleanTitle) => {
+    expect(cleanup(raw).cleanTitle).toBe(cleanTitle);
+  });
+
+  test.each([
+    ['Show S01E1990-2000', 'Show S01E1990-2000'],
+    ['Show S20E1999-2001-1080p', 'Show S20E1999-2001-1080p'],
+  ])('leaves a dashed year after a four-digit episode, which may be the range end: %s', (raw, cleanTitle) => {
+    expect(cleanup(raw).cleanTitle).toBe(cleanTitle);
+  });
+
+  test.each([
+    ['Show S02E01-12-1080p', 'Show S02E01-12-1080p'],
+    ['Show S01E05-06-720i', 'Show S01E05-06-720i'],
+    ['Show S01E05-06-2019v2', 'Show S01E05-06-2019v2'],
+  ])('leaves a dashed year or resolution with a suffix: %s', (raw, cleanTitle) => {
+    expect(cleanup(raw).cleanTitle).toBe(cleanTitle);
+  });
+
+  test.each([
+    ['Show S01E05-1071', 'Show S01E05-1071'],
+    ['Show S01E05-06-12', 'Show S01E05-06-12'],
+  ])('leaves a dashed number that is neither a year nor a resolution: %s', (raw, cleanTitle) => {
     expect(cleanup(raw).cleanTitle).toBe(cleanTitle);
   });
 
