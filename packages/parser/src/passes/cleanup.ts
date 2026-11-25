@@ -50,6 +50,24 @@ function bracketedRange(title: string): string {
   return `${title.slice(0, match.index)}(${match[1]}-${match[2]})${title.slice(match.index + match[0].length)}`;
 }
 
+export const EPISODE_MARK = /\bS\d{1,4}E\d{1,4}|\b\d{1,2}x\d{1,4}\b/i;
+const SEASON_DASH_EPISODE = /\bS([1-9]\d?)-(\d{2,4})(v\d)?(?![\dp-])/i;
+const LEADING_GROUP = /^\[[^\]]+\]/;
+
+function readsAsEpisode(title: string, season: number, episode: number): boolean {
+  return LEADING_GROUP.test(title) || episode <= season;
+}
+
+function seasonDashEpisode(title: string): string {
+  const match = SEASON_DASH_EPISODE.exec(title);
+  if (!match || EPISODE_MARK.test(title)) return title;
+  const season = Number(match[1]);
+  if (!readsAsEpisode(title, season, Number(match[2]))) return title;
+  const revision = match[3] === undefined ? '' : `.${match[3]}`;
+  const mark = `S${String(season).padStart(2, '0')}E${match[2]}${revision}`;
+  return `${title.slice(0, match.index)}${mark}${title.slice(match.index + match[0].length)}`;
+}
+
 /** `S06E03 … Episode 03`: the library would read only `Episode 03`, as an absolute number, so the SxxEyy is kept. */
 const EPISODE_WORD_AFTER_SXXEYY = /(\bS\d{1,4}E\d{1,4}\b.*?)\s*\bEpisode\s+\d{1,4}\b/i;
 
@@ -60,7 +78,7 @@ const EPISODE_WORD_AFTER_SXXEYY = /(\bS\d{1,4}E\d{1,4}\b.*?)\s*\bEpisode\s+\d{1,
 export function cleanup(raw: string): { cleanTitle: string; container?: Container } {
   const withoutPrefix = raw.trim().replace(WEBSITE_PREFIX, '').replace(REQ_PREFIX, '');
   const { title, container } = stripExtension(withoutPrefix);
-  const rewritten = bracketedRange(unbracketTitle(stripRepostSuffixes(title).trim())).replace(EPISODE_WORD_AFTER_SXXEYY, '$1');
+  const rewritten = seasonDashEpisode(bracketedRange(unbracketTitle(stripRepostSuffixes(title).trim()))).replace(EPISODE_WORD_AFTER_SXXEYY, '$1');
   const cleanTitle = moveLeadingTags(rewritten);
   return container ? { cleanTitle, container } : { cleanTitle };
 }

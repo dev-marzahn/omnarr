@@ -53,6 +53,20 @@ describe('cleanup (pass 1)', () => {
     expect(cleanup('[Fansub] Lantern Keeper - 07 [1080p]').cleanTitle).toBe('[Fansub] Lantern Keeper - 07 [1080p]');
   });
 
+  test.each([
+    ['[Fansub] Lantern Keeper S2-05v2 [1080p]', '[Fansub] Lantern Keeper S02E05.v2 [1080p]'],
+    ['Lantern Keeper S2-01v2', 'Lantern Keeper S02E01.v2'],
+    ['Lantern.Keeper.S12-03.1080p', 'Lantern.Keeper.S12E03.1080p'],
+    ['Lantern Keeper S2-02', 'Lantern Keeper S02E02'],
+    ['Lantern Keeper S2-05', 'Lantern Keeper S2-05'],
+    ['Lantern Keeper S1-10 Complete', 'Lantern Keeper S1-10 Complete'],
+    ['Lantern Keeper S2-1080p', 'Lantern Keeper S2-1080p'],
+    ['Lantern Keeper S01-03', 'Lantern Keeper S01-03'],
+    ['Lantern Keeper S01E05 S2-01', 'Lantern Keeper S01E05 S2-01'],
+  ])('writes a season-numbered episode %s as SxxEyy only where a season range cannot be meant', (raw, cleanTitle) => {
+    expect(cleanup(raw).cleanTitle).toBe(cleanTitle);
+  });
+
   test('trims whitespace', () => {
     expect(cleanup(`  ${BASE}  `).cleanTitle).toBe(BASE);
   });

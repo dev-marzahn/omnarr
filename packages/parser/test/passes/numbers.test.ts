@@ -74,7 +74,7 @@ describe('numbers (pass 2)', () => {
 });
 
 // The library reads a fansub `S2-01` as a season pack (or `S2-05` as seasons 2 to 5); it is one episode.
-describe('a fansub season-numbered episode, `[Group] Title S2-01` (parseRelease)', () => {
+describe('a fansub season-numbered episode, `[Group] Title S2-01` or `Title S2-01` (parseRelease)', () => {
   const episodeOf = (title: string) => {
     const { episodes, pack, revision, special } = parseRelease(title, 'series');
     return { episodes, pack, revision, special };
@@ -95,6 +95,55 @@ describe('a fansub season-numbered episode, `[Group] Title S2-01` (parseRelease)
       pack: undefined,
       revision: { version: 1 },
     });
+  });
+
+  test('without a group in front, S2-01 is S2E1 and the season mark leaves the title', () => {
+    expect(parseRelease('Lantern Keeper S2-01', 'series')).toMatchObject({
+      title: 'Lantern Keeper',
+      normalizedTitle: 'lantern keeper',
+      episodes: [{ season: 2, episode: 1 }],
+    });
+    expect(episodeOf('Lantern Keeper S2-01 [1080p]')).toMatchObject({ episodes: [{ season: 2, episode: 1 }], pack: undefined });
+    expect(episodeOf('Lantern.Keeper.S2-01.1080p.WEB.h264-GRP')).toMatchObject({ episodes: [{ season: 2, episode: 1 }], pack: undefined });
+  });
+
+  test('without a group in front, the version after S2-01 is the revision, not the group', () => {
+    const release = parseRelease('Lantern Keeper S2-01v2', 'series');
+    expect(release).toMatchObject({ episodes: [{ season: 2, episode: 1 }], revision: { version: 2 } });
+    expect(release.group).toBeUndefined();
+  });
+
+  test('without a group in front, the season mark leaves the title wherever the library left it', () => {
+    expect(parseRelease('Lantern.Keeper.S2-01.2019.1080p.WEB-GRP', 'series')).toMatchObject({
+      title: 'Lantern Keeper',
+      episodes: [{ season: 2, episode: 1 }],
+      year: 2019,
+    });
+  });
+
+  test('without a group in front, an episode above the season is a season range, as S1-10 packs are written', () => {
+    expect(episodeOf('Lantern Keeper S1-10 Complete 1080p').pack).toEqual({ seasons: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10], full: true });
+    expect(episodeOf('Lantern.Keeper.S2-05.1080p.WEB.h264-GRP').pack).toEqual({ seasons: [2, 3, 4, 5], full: true });
+    expect(episodeOf('Lantern Keeper S10-12').pack).toEqual({ seasons: [10, 11, 12], full: true });
+  });
+
+  test('a resolution after the dash is no episode', () => {
+    expect(episodeOf('Lantern Keeper S2-1080p')).toMatchObject({ episodes: [{ season: 2 }], pack: { seasons: [2], full: true } });
+    expect(episodeOf('Lantern.Keeper.S2-480p.WEB')).toMatchObject({ episodes: [{ season: 2 }], pack: { seasons: [2], full: true } });
+  });
+
+  test('a group with nothing after the episode keeps its name, and a season mark in the title stays', () => {
+    expect(parseRelease('[Grp] Lantern Keeper S2-01v2', 'series')).toMatchObject({
+      group: 'Grp',
+      episodes: [{ season: 2, episode: 1 }],
+      revision: { version: 2 },
+    });
+    expect(parseRelease('S2 Lantern Keeper S2-01', 'series')).toMatchObject({ title: 'S2 Lantern Keeper', episodes: [{ season: 2, episode: 1 }] });
+  });
+
+  test('an SxxEyy the library read stays', () => {
+    expect(episodeOf('Lantern Keeper S01E05 S2-10').episodes).toEqual([{ season: 1, episode: 5 }]);
+    expect(episodeOf('Lantern.Keeper.S03E04.S2-01').episodes).toEqual([{ season: 3, episode: 4 }]);
   });
 
   test('S2-00 is episode 0 of season 2, never a pack and not a special', () => {
@@ -124,6 +173,8 @@ describe('a fansub season-numbered episode, `[Group] Title S2-01` (parseRelease)
     expect(episodeOf('[Grp] Lantern Keeper S01-03 (1080p)').pack).toEqual({ seasons: [1, 2, 3], full: true });
     expect(episodeOf('[Grp] Lantern Keeper S1-3 (1080p)').pack).toEqual({ seasons: [1, 2, 3], full: true });
     expect(episodeOf('Lantern.Keeper.S01-03.1080p.BluRay.x264-GRP').pack).toEqual({ seasons: [1, 2, 3], full: true });
+    expect(episodeOf('Lantern Keeper S01-03').pack).toEqual({ seasons: [1, 2, 3], full: true });
+    expect(episodeOf('Lantern Keeper S1-3').pack).toEqual({ seasons: [1, 2, 3], full: true });
   });
 
   test('absolute numbers, SxxEyy and titles with numbers and dashes are unchanged', () => {
