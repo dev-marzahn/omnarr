@@ -16,6 +16,7 @@
 //   - reset-admin-password
 //   - the VPN layout: gluetun and qBittorrent recreated together, and
 //     qBittorrent answers through gluetun again
+import { SetupStep, type SetupStepState } from '@omnarr/contracts';
 import { makeFunctionReference } from 'convex/server';
 import { afterAll, beforeAll, describe, expect, test } from 'vite-plus/test';
 
@@ -251,7 +252,7 @@ describe('first run to "Setup complete", interrupted once', () => {
       300_000,
       1_000,
     );
-    expect(status.jellyfin.steps.map((step: Any) => step.state)).toEqual(['done', 'done', 'done', 'done', 'done']);
+    expect(status.jellyfin.steps.map((row: SetupStepState) => [row.step, row.state])).toEqual(SetupStep.options.map((step) => [step, 'done']));
     expect((await query('api/downloadClients:get')).torrents.enabled).toBe(false);
 
     await mutation('api/scan:start', { trigger: 'firstRun' });
