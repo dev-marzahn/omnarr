@@ -1,7 +1,8 @@
 // Pass 1, clean-up. Runs before the library on the raw title.
-import type { Container } from '@omnarr/contracts';
+import { type Container, Resolution } from '@omnarr/contracts';
 
 import { REPOST_SUFFIXES } from '../tables/repostSuffixes.ts';
+import { EPISODE_MARK, QUALITY_TOKEN, tokensOf, versionCapture, YEAR, YEAR_DIGITS } from './tokens.ts';
 
 const EXTENSION = /\.(mkv|mp4|avi|m2ts|ts)$/i;
 
@@ -31,7 +32,7 @@ function moveLeadingTags(title: string): string {
 }
 
 /** `【Group】[Title][03]` or `[Group][Title][03]`: a bracketed title, then a bracketed episode number. */
-const BRACKETED_TITLE = /^[[【]([^\]】]+)[\]】]\s*\[([^\]]*\p{L}[^\]]*)\]\s*\[(\d{1,4})(?:v\d)?\]/u;
+const BRACKETED_TITLE = new RegExp(`^[[【]([^\\]】]+)[\\]】]\\s*\\[([^\\]]*\\p{L}[^\\]]*)\\]\\s*\\[(\\d{1,4})(?:${versionCapture('version')})?\\]`, 'u');
 
 /** The library finds no title or number there; `[Group] Title - 03` it reads. */
 function unbracketTitle(title: string): string {
@@ -42,26 +43,117 @@ function unbracketTitle(title: string): string {
 
 /** `[01-08]`: a bracketed episode range, which the library reads only in parentheses. Years (`[2019-2020]`) aren't ranges. */
 const BRACKETED_RANGE = /\[(\d{2,4})\s*[-~]\s*(\d{2,4})\]/;
-const YEAR = /^(19|20)\d\d$/;
+
+function replaceMatch(title: string, match: RegExpExecArray, replacement: string): string {
+  return `${title.slice(0, match.index)}${replacement}${title.slice(match.index + match[0].length)}`;
+}
 
 function bracketedRange(title: string): string {
   const match = BRACKETED_RANGE.exec(title);
   if (!match || YEAR.test(match[1]!) || YEAR.test(match[2]!)) return title;
-  return `${title.slice(0, match.index)}(${match[1]}-${match[2]})${title.slice(match.index + match[0].length)}`;
+  return replaceMatch(title, match, `(${match[1]}-${match[2]})`);
+}
+
+const YEAR_OR_RESOLUTION = `(?:${YEAR_DIGITS}|${Resolution.options.map((option) => option.value).join('|')})(?!\\d)`;
+const NOT_YEAR_OR_RESOLUTION = `(?!${YEAR_OR_RESOLUTION})`;
+const FURTHER_EPISODE_MARK = `(?:-E?|E)${NOT_YEAR_OR_RESOLUTION}`;
+const optionalVersion = (name: string): string => `(?:${versionCapture(name)})?`;
+const SEASON_DASH = '\\bS(?<season>[1-9]\\d?)-';
+const EPISODES_END = `(?![\\dp]|e\\d|-e\\d|-${NOT_YEAR_OR_RESOLUTION}\\d)(?<dashBeforeYearOrResolution>-(?=${YEAR_OR_RESOLUTION}))?`;
+const SEASON_DASH_NUMBER_EPISODES = new RegExp(
+  `${SEASON_DASH}\\d{1,4}E(?<first>\\d{1,4})(?:(?:${FURTHER_EPISODE_MARK}\\d{1,4})*${FURTHER_EPISODE_MARK}(?<last>\\d{1,4}))?${optionalVersion('lastVersion')}${EPISODES_END}`,
+  'i',
+);
+const SEASON_DASH_EPISODES = new RegExp(
+  `${SEASON_DASH}(?<first>\\d{2,4})${optionalVersion('firstVersion')}(?:-${NOT_YEAR_OR_RESOLUTION}(?<last>\\d{2,4})${optionalVersion('lastVersion')})?${EPISODES_END}`,
+  'i',
+);
+const LEADING_BRACKET = /^\[([^\]]+)\]/;
+
+const twoDigits = (n: number): string => String(n).padStart(2, '0');
+
+function startsWithGroup(title: string): boolean {
+  const bracket = LEADING_BRACKET.exec(title)?.[1];
+  return bracket !== undefined && !tokensOf(bracket).every((token) => QUALITY_TOKEN.test(token));
+}
+
+interface SeasonEpisodes {
+  season: number;
+  first: number;
+  last?: number;
+  version?: number;
+}
+
+function seasonEpisodes(season: string, first: string, last: string | undefined, version: string | undefined): SeasonEpisodes {
+  return {
+    season: Number(season),
+    first: Number(first),
+    ...(last === undefined ? {} : { last: Number(last) }),
+    ...(version === undefined ? {} : { version: Number(version) }),
+  };
+}
+
+const isAscending = ({ first, last }: SeasonEpisodes): boolean => last === undefined || first <= last;
+
+function cannotBeSeasonRange(title: string, { season, first, last }: SeasonEpisodes): boolean {
+  return last !== undefined || startsWithGroup(title) || first <= season;
+}
+
+function episodeMark({ season, first, last, version }: SeasonEpisodes): string {
+  const rangeEnd = last === undefined || last === first ? '' : `E${twoDigits(last)}`;
+  const revision = version === undefined ? '' : `.v${version}`;
+  return `S${twoDigits(season)}E${twoDigits(first)}${rangeEnd}${revision}`;
+}
+
+interface SeasonDashForm {
+  pattern: RegExp;
+  accepts: (title: string, episodes: SeasonEpisodes) => boolean;
+}
+
+const SEASON_DASH_FORMS: readonly SeasonDashForm[] = [
+  { pattern: SEASON_DASH_NUMBER_EPISODES, accepts: (_title, episodes) => isAscending(episodes) },
+  { pattern: SEASON_DASH_EPISODES, accepts: (title, episodes) => isAscending(episodes) && cannotBeSeasonRange(title, episodes) },
+];
+
+function seasonDashRewrite({ pattern, accepts }: SeasonDashForm): (title: string) => string {
+  return (title) => {
+    const match = pattern.exec(title);
+    const groups: Record<string, string | undefined> = match?.groups ?? {};
+    const { season, first, last, firstVersion, lastVersion, dashBeforeYearOrResolution } = groups;
+    if (!match || season === undefined || first === undefined || EPISODE_MARK.test(title)) return title;
+    const episodes = seasonEpisodes(season, first, last, lastVersion ?? firstVersion);
+    if (!accepts(title, episodes)) return title;
+    const separator = dashBeforeYearOrResolution === undefined ? '' : ' ';
+    return replaceMatch(title, match, `${episodeMark(episodes)}${separator}`);
+  };
 }
 
 /** `S06E03 … Episode 03`: the library would read only `Episode 03`, as an absolute number, so the SxxEyy is kept. */
 const EPISODE_WORD_AFTER_SXXEYY = /(\bS\d{1,4}E\d{1,4}\b.*?)\s*\bEpisode\s+\d{1,4}\b/i;
+
+const withoutEpisodeWordAfterSxxEyy = (title: string): string => title.replace(EPISODE_WORD_AFTER_SXXEYY, '$1');
+
+const withoutWebsitePrefix = (title: string): string => title.replace(WEBSITE_PREFIX, '');
+const withoutReqPrefix = (title: string): string => title.replace(REQ_PREFIX, '');
+
+const TITLE_REWRITES: readonly ((title: string) => string)[] = [
+  withoutWebsitePrefix,
+  withoutReqPrefix,
+  stripRepostSuffixes,
+  unbracketTitle,
+  bracketedRange,
+  ...SEASON_DASH_FORMS.map(seasonDashRewrite),
+  withoutEpisodeWordAfterSxxEyy,
+  moveLeadingTags,
+];
 
 /**
  * Pass 1: strips the file extension (recorded as `container`), re-poster
  * suffixes, a website prefix and a leading `[req]`, before the library runs.
  */
 export function cleanup(raw: string): { cleanTitle: string; container?: Container } {
-  const withoutPrefix = raw.trim().replace(WEBSITE_PREFIX, '').replace(REQ_PREFIX, '');
-  const { title, container } = stripExtension(withoutPrefix);
-  const rewritten = bracketedRange(unbracketTitle(stripRepostSuffixes(title).trim())).replace(EPISODE_WORD_AFTER_SXXEYY, '$1');
-  const cleanTitle = moveLeadingTags(rewritten);
+  const { title, container } = stripExtension(raw.trim());
+  const cleanTitle = TITLE_REWRITES.reduce((rewritten, rewrite) => rewrite(rewritten), title);
   return container ? { cleanTitle, container } : { cleanTitle };
 }
 

@@ -31,12 +31,6 @@ export const ALIAS_SOURCE: Record<AliasSource, string> = {
   manual: 'Added by you',
 };
 export const MAPPING_SOURCE: Record<MappingSource, string> = { tmdb: 'TMDB', tvdb: 'TVDB', xem: 'TheXEM', animeLists: 'Anime-Lists', manual: 'Manual' };
-export const SOURCE_NAME: Record<MetadataSettingsRow['sources'][number]['name'], string> = {
-  tmdb: 'TMDB',
-  xem: 'TheXEM',
-  animeLists: 'Anime-Lists',
-  sceneMapping: 'Sonarr scene mappings',
-};
 
 /** A mapping row's numbers: `S01E13`, `#13`, or both. */
 export function mappingNumbers(row: { season?: number; episode?: number; absolute?: number }): string {

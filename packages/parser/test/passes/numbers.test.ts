@@ -1,6 +1,5 @@
 import { describe, expect, test } from 'vite-plus/test';
 
-import { parseRelease } from '../../src/index.ts';
 import { numbers } from '../../src/passes/numbers.ts';
 import { release } from './release.ts';
 
@@ -71,75 +70,18 @@ describe('numbers (pass 2)', () => {
   test('marks season 0 as a special', () => {
     expect(numbers('The.Long.Harbor.S00E05.1080p', release({ episodes: [{ season: 0, episode: 5 }] })).special).toBe(true);
   });
-});
 
-// The library reads a fansub `S2-01` as a season pack (or `S2-05` as seasons 2 to 5); it is one episode.
-describe('a fansub season-numbered episode, `[Group] Title S2-01` (parseRelease)', () => {
-  const episodeOf = (title: string) => {
-    const { episodes, pack, revision, special } = parseRelease(title, 'series');
-    return { episodes, pack, revision, special };
-  };
-
-  test('S2-01v2 is season 2, episode 1, version 2, and not a pack', () => {
-    expect(episodeOf('[SubsPlease] Otonari no Tenshi-sama ni Itsunomanika Dame Ningen ni Sareteita Ken S2-01v2 [1080p] [6504C9CC]')).toEqual({
-      episodes: [{ season: 2, episode: 1 }],
-      pack: undefined,
-      revision: { version: 2, real: 0, repack: false },
-      special: false,
-    });
+  test.each([
+    ['Lantern Keeper S02E01.v10', 10],
+    ['Lantern Keeper S02E01-12.v3 [1080p]', 3],
+    ['Lantern Keeper S02E01v2', 2],
+    ['Lantern Keeper S02E01.v1000', 1000],
+  ])('reads the version written after the episode mark in %s, which the library drops', (cleanTitle, version) => {
+    expect(numbers(cleanTitle, release({ episodes: [{ season: 2, episode: 1 }] })).revision.version).toBe(version);
   });
 
-  test('S2-01 is S2E1', () => {
-    expect(episodeOf('[SubsPlease] Otonari no Tenshi-sama ni Itsunomanika Dame Ningen ni Sareteita Ken S2-01 [480p] [95FC520B]')).toMatchObject({
-      episodes: [{ season: 2, episode: 1 }],
-      pack: undefined,
-      revision: { version: 1 },
-    });
-  });
-
-  test('S2-00 is episode 0 of season 2, never a pack and not a special', () => {
-    expect(episodeOf('[SubsPlease] Tsue to Tsurugi no Wistoria S2-00 [1080p] [A1F31848]')).toMatchObject({
-      episodes: [{ season: 2, episode: 0 }],
-      pack: undefined,
-      special: false,
-    });
-  });
-
-  test('a two-digit season, and an episode above the season, which the library reads as a season range', () => {
-    expect(episodeOf('[SubsPlease] Lantern Keeper S12-03 (1080p) [A1F31848]')).toMatchObject({ episodes: [{ season: 12, episode: 3 }], pack: undefined });
-    expect(episodeOf('[SubsPlease] Lantern Keeper S2-05 (1080p) [A1F31848]')).toMatchObject({ episodes: [{ season: 2, episode: 5 }], pack: undefined });
-  });
-
-  test('the spaced form keeps its reading: title with the season mark, and an absolute number read within that season', () => {
-    const spaced = parseRelease('[SubsPlease] Tsue to Tsurugi no Wistoria S2 - 01 (1080p) [A1F31848]', 'series');
-    expect(spaced).toMatchObject({ title: 'Tsue to Tsurugi no Wistoria S2', episodes: [{ absolute: 1 }] });
-    expect(spaced.pack).toBeUndefined();
-    expect(episodeOf('[SubsPlease] Lantern Keeper S2 - 01-12 (1080p) [Batch]').episodes).toEqual(Array.from({ length: 12 }, (_, i) => ({ absolute: i + 1 })));
-  });
-
-  test('season packs and season ranges stay packs', () => {
-    expect(episodeOf('Lantern.Keeper.S02.1080p.WEB.h264-OldT')).toMatchObject({ episodes: [{ season: 2 }], pack: { seasons: [2], full: true } });
-    expect(episodeOf('Lantern Keeper S02 1080p WEB h264-OldT')).toMatchObject({ episodes: [{ season: 2 }], pack: { seasons: [2], full: true } });
-    expect(episodeOf('[SubsPlease] Lantern Keeper S2 Batch (1080p)')).toMatchObject({ episodes: [{ season: 2 }], pack: { seasons: [2], full: true } });
-    expect(episodeOf('[Grp] Lantern Keeper S01-03 (1080p)').pack).toEqual({ seasons: [1, 2, 3], full: true });
-    expect(episodeOf('[Grp] Lantern Keeper S1-3 (1080p)').pack).toEqual({ seasons: [1, 2, 3], full: true });
-    expect(episodeOf('Lantern.Keeper.S01-03.1080p.BluRay.x264-GRP').pack).toEqual({ seasons: [1, 2, 3], full: true });
-  });
-
-  test('absolute numbers, SxxEyy and titles with numbers and dashes are unchanged', () => {
-    expect(parseRelease('[SubsPlease] Lantern Keeper - 01v2 (1080p) [A1F31848]', 'series')).toMatchObject({
-      episodes: [{ absolute: 1 }],
-      revision: { version: 2 },
-    });
-    expect(episodeOf('Lantern.Keeper.S01E01.1080p.WEB.h264-GRP').episodes).toEqual([{ season: 1, episode: 1 }]);
-    expect(parseRelease('[SubsPlease] Mob Psycho 100 S3 - 01 (1080p) [A1F31848]', 'series')).toMatchObject({
-      title: 'Mob Psycho 100 S3',
-      episodes: [{ absolute: 1 }],
-    });
-    expect(parseRelease('[SubsPlease] 86 - Eighty Six - 01 (1080p) [A1F31848]', 'series')).toMatchObject({
-      title: '86 - Eighty Six',
-      episodes: [{ absolute: 1 }],
-    });
-    expect(episodeOf('[SubsPlease] 2.5-jigen no Ririsa - 01 (1080p) [A1F31848]').episodes).toEqual([{ absolute: 1 }]);
+  test('a word starting with v after the episode mark is no version, so the library revision stays', () => {
+    expect(numbers('Lantern Keeper S02E01v2rip', release({ episodes: [{ season: 2, episode: 1 }] })).revision.version).toBe(1);
+    expect(numbers('Lantern Keeper S02E01.v2rip', release({ episodes: [{ season: 2, episode: 1 }] })).revision.version).toBe(1);
   });
 });

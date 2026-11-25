@@ -9,7 +9,7 @@ import { SHIPPED_PROFILES, type ShippedKey } from '@omnarr/scoring';
 import { convexTest } from 'convex-test';
 import { vi } from 'vite-plus/test';
 
-import { components } from '../convex/_generated/api';
+import { components, internal } from '../convex/_generated/api';
 import type { Doc, Id } from '../convex/_generated/dataModel';
 import authSchema from '../convex/betterAuth/schema';
 import { NYAA_CAPS, NYAA_CATEGORIES } from '../convex/indexers/nyaa';
@@ -203,8 +203,20 @@ export function seedXemList(t: Backend, tvdbIds: number[]): Promise<unknown> {
 
 export const TMDB_API_KEY = 'test-tmdb-key';
 
-/** XEM as the fake serves it: the `havemap` list and each show's `/map/all` and `/map/names`. */
-export type XemFake = { havemap?: number[]; shows?: Record<number, { all: unknown; names?: unknown }>; down?: boolean };
+export type XemFake = {
+  havemap?: number[];
+  shows?: Record<number, { all: unknown; names?: unknown[] }>;
+  allNames?: unknown;
+  down?: boolean;
+  namesDown?: boolean;
+};
+
+const OTHER_SHOWS_NAMES = { 7799999: [{ 'A Show No Test Subscribes To': -1 }] };
+
+export async function fetchXem(t: Backend): Promise<void> {
+  await t.action(internal.mapping.xem.fetchHavemap, {});
+  await t.action(internal.mapping.xem.fetchXemNames, {});
+}
 /** Anime-Lists as the fake serves it; `etag` answers a matching `If-None-Match` with 304. */
 export type AnimeListsFake = { xml?: string; etag?: string; down?: boolean };
 /** An indexer's API behind a host: the Newznab fake's `handle`, or a test's own answer. */
@@ -212,7 +224,20 @@ export type IndexerFake = (request: Request, init?: { signal?: AbortSignal }) =>
 /** GitHub's releases API as the update check reads it: the latest release, an error status, or no answer; `seen` collects each request's headers. */
 export type GithubFake = { latest?: { tag_name: string; html_url: string }; status?: number; down?: boolean; seen?: Headers[] };
 /** Sonarr's scene-mapping list as the fake serves it (the fixture unless `list` is given); `seen` collects each request's headers. */
-export type SceneMappingsFake = { list?: unknown; down?: boolean; seen?: Headers[] };
+export type SceneMappingsFake = { list?: unknown; down?: boolean; seen?: Headers[]; streamedBytes?: number };
+
+function streamWithoutLength(bytes: number): Response {
+  const chunk = new Uint8Array(1024 * 1024).fill(0x20);
+  let sent = 0;
+  const body = new ReadableStream<Uint8Array>({
+    pull(controller) {
+      if (sent >= bytes) return controller.close();
+      controller.enqueue(chunk);
+      sent += chunk.byteLength;
+    },
+  });
+  return new Response(body, { headers: { 'content-type': 'application/json' } });
+}
 export type MetadataFakes = Partial<TmdbFakeOptions> & {
   xem?: XemFake;
   animeLists?: AnimeListsFake;
@@ -250,11 +275,18 @@ export function useFetchFakes(options: MetadataFakes = {}): FakeRequests {
     if (url.hostname === 'tmdb.fake' || url.hostname === 'image.tmdb.fake') return handleTmdb(request);
     if (url.hostname === 'thexem.info') {
       if (xem.down) return timeout();
-      if (url.pathname === '/map/havemap') return Response.json({ result: 'success', data: (xem.havemap ?? []).map(String), message: '' });
+      const havemap = xem.havemap ?? Object.keys(xem.shows ?? {}).map(Number);
+      if (url.pathname === '/map/havemap') return Response.json({ result: 'success', data: havemap.map(String), message: '' });
+      if (url.pathname === '/map/allNames') {
+        if (xem.namesDown) return timeout();
+        if (url.searchParams.get('origin') !== 'tvdb' || url.searchParams.get('seasonNumbers') !== '1') return new Response('bad query', { status: 400 });
+        if (xem.allNames instanceof Response) return xem.allNames;
+        if (xem.allNames !== undefined) return Response.json(xem.allNames);
+        const data = Object.fromEntries(Object.entries(xem.shows ?? {}).flatMap(([id, show]) => (show.names ? [[id, show.names]] : [])));
+        return Response.json({ result: 'success', data: { ...OTHER_SHOWS_NAMES, ...data }, message: '' });
+      }
       const show = xem.shows?.[Number(url.searchParams.get('id'))];
-      const failure = { result: 'failure', data: [], message: 'no show found' };
-      if (url.pathname === '/map/all') return Response.json(show?.all ?? failure);
-      if (url.pathname === '/map/names') return Response.json(show?.names ?? failure);
+      if (url.pathname === '/map/all') return Response.json(show?.all ?? { result: 'failure', data: [], message: 'no show found' });
     }
     if (url.hostname === 'raw.githubusercontent.com') {
       if (animeLists.down) return timeout();
@@ -265,6 +297,7 @@ export function useFetchFakes(options: MetadataFakes = {}): FakeRequests {
     if (url.hostname === 'services.sonarr.tv' && url.pathname === '/v1/scenemapping') {
       sceneMappings.seen?.push(request.headers);
       if (sceneMappings.down) return timeout();
+      if (sceneMappings.streamedBytes !== undefined) return streamWithoutLength(sceneMappings.streamedBytes);
       return Response.json(sceneMappings.list ?? sceneMappingList);
     }
     if (url.hostname === 'api.github.com' && url.pathname === '/repos/dev-marzahn/omnarr/releases/latest') {

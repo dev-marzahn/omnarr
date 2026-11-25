@@ -7,14 +7,15 @@ import { z } from 'zod';
 import { internal } from '../_generated/api';
 import type { Id } from '../_generated/dataModel';
 import { internalAction, type ActionCtx } from '../_generated/server';
-import { chooseTvdbId, entriesStartingAtAbsoluteOne, projectMappings, type MappingRow, type Projection } from '../mapping/project';
-import { fetchShow, type XemEntry, type XemName } from '../mapping/xem';
+import { chooseTvdbId, entriesStartingAtAbsoluteOne, projectMappings, type MappingRow, type Projection, tmdbSeasonOf } from '../mapping/project';
+import { NO_WORK_SEASONS, sceneMappingAliases, workSeasons } from '../mapping/sceneMappingSeasons';
+import { fetchShow, type XemEntry } from '../mapping/xem';
 import { withProvider } from './keys';
 import { aliasList, seasonNames, selectAbsoluteOrder, suggestNumbering } from './numbering';
 import type { WorkMetadata } from './provider';
 import { reconcileUnits, type UnitPlan } from './reconcile';
 import { nextSyncAt } from './schedule';
-import type { UnitBatch, WorkFields } from './write';
+import type { UnitBatch, WorkFields, XemDown } from './write';
 
 /**
  * A Work's sync, run in `metadataPool`: fetch TMDB, then `applySnapshot`.
@@ -59,7 +60,7 @@ export function unitBatches(plan: UnitPlan<Id<'units'>>, size: number): UnitBatc
 
 /** The scene seasons XEM's `scene` rows give each TMDB season's Units. */
 function sceneSeasonsByTmdbSeason(units: WorkMetadata['units'], rows: MappingRow[]): Map<number, Set<number>> {
-  const seasonOf = new Map(units.flatMap((unit) => (unit.tmdbId && unit.tmdbSeason !== undefined ? [[unit.tmdbId, unit.tmdbSeason] as const] : [])));
+  const seasonOf = tmdbSeasonOf(units);
   const out = new Map<number, Set<number>>();
   for (const row of rows) {
     const season = seasonOf.get(row.key);
@@ -92,21 +93,19 @@ export async function applySnapshot(ctx: ActionCtx, workId: Id<'works'>, snapsho
   const now = Date.now();
   const notes: string[] = [];
 
-  // XEM: a failure keeps the Work's existing xem rows and XEM aliases.
   let xemEntries: XemEntry[] | undefined = [];
-  let xemNames: XemName[] | undefined = [];
   if (input.inXem) {
     try {
-      ({ entries: xemEntries, names: xemNames } = await fetchShow(input.tvdbId!));
+      xemEntries = await fetchShow(input.tvdbId!);
       await ctx.runMutation(internal.metadata.keys.recordHealth, { source: 'xem', outcome: 'success', at: now });
     } catch {
       xemEntries = undefined;
-      xemNames = undefined;
       notes.push('XEM could not be reached; its numbers are from the last successful fetch.');
       await ctx.runMutation(internal.metadata.keys.recordHealth, { source: 'xem', outcome: 'failure', at: now });
     }
   }
   const xemVersion = new Date(now).toISOString();
+  const xemDown: XemDown = { rows: xemEntries === undefined, names: input.xemNames === undefined };
 
   const plan = reconcileUnits(input.units, snapshot.units, {
     monitorNewUnits: input.monitorNewUnits,
@@ -146,9 +145,9 @@ export async function applySnapshot(ctx: ActionCtx, workId: Id<'works'>, snapsho
   const named =
     snapshot.kind !== 'series'
       ? undefined
-      : xemEntries === undefined
+      : xemDown.rows
         ? input.seasonNames
-        : seasonNames({ seasons: snapshot.seasons ?? [], sceneSeasons: sceneSeasonsByTmdbSeason(snapshot.units, projection.rows), titles: tmdbTitles });
+        : seasonNames({ seasons: snapshot.seasons ?? [], xemSceneSeasons: sceneSeasonsByTmdbSeason(snapshot.units, projection.rows), titles: tmdbTitles });
   const fields: WorkFields = {
     seasonNames: named,
     title: snapshot.title,
@@ -162,7 +161,7 @@ export async function applySnapshot(ctx: ActionCtx, workId: Id<'works'>, snapsho
     tmdbStatus: snapshot.tmdbStatus,
     numberingSuggestion: suggestNumbering(snapshot, input.animeListEntries.length > 0),
     // While XEM is down, the last status stands: its rows are kept.
-    mappingStatus: xemEntries === undefined && input.mappingStatus ? input.mappingStatus : projection.status,
+    mappingStatus: xemDown.rows && input.mappingStatus ? input.mappingStatus : projection.status,
     mappingNotes: [...projection.notes, ...notes],
     nextSyncAt: nextSyncAt(snapshot, snapshot.units, now),
     externalIds: [
@@ -172,11 +171,12 @@ export async function applySnapshot(ctx: ActionCtx, workId: Id<'works'>, snapsho
     ],
   };
   const starting = entriesStartingAtAbsoluteOne(projection.rows);
+  const seasonsForSceneNames = xemDown.rows ? NO_WORK_SEASONS : workSeasons(snapshot.units, projection.rows);
   const aliases = aliasList({
     tmdbTitles,
     animeLists: input.animeListEntries.map(({ anidbId, name }) => ({ anidbId, name, startsAtAbsoluteOne: starting.has(anidbId) })),
-    xemNames: xemNames ?? [],
-    sceneMappings: input.sceneMappings,
+    xemNames: input.xemNames ?? [],
+    sceneMappings: sceneMappingAliases(input.sceneMappings, seasonsForSceneNames),
     seasonNames: fields.seasonNames,
   });
   let cursor: string | null = null;
@@ -185,7 +185,7 @@ export async function applySnapshot(ctx: ActionCtx, workId: Id<'works'>, snapsho
       workId,
       version,
       cursor,
-      keepXem: { rows: xemEntries === undefined, aliases: xemNames === undefined },
+      xemDown,
       aliases,
       fields,
     });

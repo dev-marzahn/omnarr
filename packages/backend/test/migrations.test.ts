@@ -10,10 +10,11 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vite-plus/tes
 
 import { api, components, internal } from '../convex/_generated/api';
 import { findWorksByTitle, resolveUnits } from '../convex/metadata/resolve';
+import { workForSearch } from '../convex/pipeline/search';
 import schema from '../convex/schema';
 import jojoPartsNames from './fixtures/xem/jojoPartsNames.json';
 import jojoPartsShape from './fixtures/xem/jojoPartsShape.json';
-import { asAdmin, drainPool, modules, seedLibraries, seedXemList, setup, useFetchFakes } from './setup';
+import { asAdmin, drainPool, fetchXem, modules, seedLibraries, seedXemList, setup, useFetchFakes } from './setup';
 
 test('0001: blocklist rows get the title key of the current rule, so a blocklisted spelling still blocks the other', async () => {
   const t = setup();
@@ -45,6 +46,34 @@ test('0001: blocklist rows get the title key of the current rule, so a blocklist
   });
 });
 
+test("0007: a stored alias's scene season becomes its part season, and the alias reads the same before and after", async () => {
+  const t = setup();
+  migrationsComponent.register(t);
+  const { series: libraryId, releaseProfileId } = await seedLibraries(t);
+  const workId = await t.run((ctx) =>
+    ctx.db.insert('works', { libraryId, kind: 'series', title: 'Lantern Keeper', numberingScheme: 'anime', releaseProfileId, monitorNewUnits: true }),
+  );
+  const aliasId = await t.run((ctx) =>
+    ctx.db.insert('workAliases', {
+      workId,
+      title: 'Lantern Keeper Part 2',
+      normalized: 'lantern keeper part 2',
+      compact: 'lanternkeeperpart2',
+      source: 'xem',
+      sceneSeason: 2,
+    }),
+  );
+  const view = () => t.run(async (ctx) => (await workForSearch(ctx, (await ctx.db.get(workId))!)).aliases);
+  const asRead = [{ aliasId, normalized: 'lantern keeper part 2', partSeason: { season: 2, ordering: 'scene' } }];
+  expect(await view()).toEqual(asRead);
+
+  await t.run((ctx) => runToCompletion(ctx, components.migrations, internal.migrations['0007_work_alias_part_season'].default));
+  const row = await t.run((ctx) => ctx.db.get(aliasId));
+  expect(row).toMatchObject({ partSeason: { season: 2, ordering: 'scene' } });
+  expect(row).not.toHaveProperty('sceneSeason');
+  expect(await view()).toEqual(asRead);
+});
+
 test('0002: aliases get their compact form, so findWorksByTitle finds them across a hyphen', async () => {
   // Rows from before 0002 have no `compact`; convex-release's first push runs migrations with validation off.
   const t = convexTest(defineSchema(schema.tables, { schemaValidation: false }), modules);
@@ -64,8 +93,8 @@ test('0002: aliases get their compact form, so findWorksByTitle finds them acros
       ['hoshi no chochin', 'hoshinochochin'],
       ['star lantern', 'starlantern'],
     ]);
-    expect((await findWorksByTitle(ctx, 'mori sama keeps watch')).map((m) => m.workId)).toEqual([workId]);
-    expect((await findWorksByTitle(ctx, 'hoshinochochin')).map((m) => m.workId)).toEqual([workId]);
+    expect((await findWorksByTitle(ctx, 'mori sama keeps watch', 'releaseTitle')).map((m) => m.workId)).toEqual([workId]);
+    expect((await findWorksByTitle(ctx, 'hoshinochochin', 'releaseTitle')).map((m) => m.workId)).toEqual([workId]);
   });
 });
 
@@ -83,6 +112,7 @@ describe('0003: Works with XEM aliases sync again, so the aliases get their scen
     const { series: libraryId, releaseProfileId } = await seedLibraries(t);
     await seedXemList(t, [7700009]);
     useFetchFakes({ series: [...SERIES, jojoParts()], xem: { shows: { 7700009: { all: jojoPartsShape, names: jojoPartsNames } } } });
+    await fetchXem(t);
     const subscribe = (tmdbId: string, numberingScheme: 'anime' | 'standard') =>
       admin.action(api.api.library.subscribe, { tmdbId, kind: 'series', libraryId, releaseProfileId, seasons: [], numberingScheme });
     const { workId } = await subscribe('900009', 'anime');
@@ -92,13 +122,15 @@ describe('0003: Works with XEM aliases sync again, so the aliases get their scen
     const stoneOcean = () =>
       t.run(async (ctx) => {
         const alias = (await ctx.db.query('workAliases').collect()).find((a) => a.normalized === 'jojos bizarre adventure stone ocean')!;
-        const result = await resolveUnits(ctx, workId, [{ absolute: 1 }], undefined, { sceneSeason: alias.sceneSeason });
+        const matched =
+          alias.partSeason === undefined ? ({ kind: 'plain' } as const) : ({ kind: 'partSeason', ...alias.partSeason, releaseSeason: 1 } as const);
+        const result = await resolveUnits(ctx, workId, [{ absolute: 1 }], undefined, matched);
         return Promise.all(result.unitIds.map(async (id) => (await ctx.db.get(id))!.tmdbSeason));
       });
 
     // The rows as a sync before the fix left them: XEM aliases without a scene season, the next sync a month away.
     await t.run(async (ctx) => {
-      for (const alias of await ctx.db.query('workAliases').collect()) if (alias.source === 'xem') await ctx.db.patch(alias._id, { sceneSeason: undefined });
+      for (const alias of await ctx.db.query('workAliases').collect()) if (alias.source === 'xem') await ctx.db.patch(alias._id, { partSeason: undefined });
       for (const row of await ctx.db.query('workMetadata').collect()) await ctx.db.patch(row._id, { nextSyncAt: later });
     });
     expect(await stoneOcean()).toEqual([]);

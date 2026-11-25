@@ -1,42 +1,52 @@
 // Matching a release to a Work and its Units. The backend's resolveUnits runs
 // between matchTitle and matchUnits.
-import type { IndexerItem, ParsedRelease, ResolveResult } from '@omnarr/contracts';
+import type { AliasReading, IndexerItem, MatchedAlias, ParsedRelease, PartSeason, ResolveResult, SeasonNameForMatch } from '@omnarr/contracts';
 import { compactTitle, normalizeTitle, titleSides } from '@omnarr/parser';
 
 import type { Id } from './ids.ts';
+import { releaseFilterMatches } from './releaseFilter.ts';
 
 export type WorkForMatch = {
   kind: 'series' | 'movie';
   year?: number;
-  /** `sceneSeason`: the scene season XEM lists the alias under (a part's name). */
-  aliases: { aliasId: Id<'workAliases'>; normalized: string; anidbId?: number; sceneSeason?: number }[];
-  /** The Work's named TMDB seasons, each with its scene season. */
-  seasonNames?: SeasonName[];
+  aliases: WorkAlias[];
+  seasonNames?: SeasonNameForMatch[];
   /** IMDb with its "tt" prefix, as externalIds stores it. */
   ids: { tmdb: string; tvdb?: string; imdb?: string };
 };
 
-/** A TMDB season's own name (`Steel Ball Run`), normalized, and the one scene season XEM gives its episodes. */
-export type SeasonName = { normalized: string; sceneSeason: number };
+export type WorkAlias = AliasReading & { aliasId: Id<'workAliases'>; normalized: string };
+
+type ReleaseCondition = Pick<AliasReading, 'releaseSeason' | 'filter'>;
+
+export const namesEveryRelease = (alias: ReleaseCondition) => alias.releaseSeason === undefined && alias.filter === undefined;
+
+export const releaseSeasonAllows = ({ releaseSeason }: Pick<AliasReading, 'releaseSeason'>, season: number | undefined) =>
+  releaseSeason === undefined || releaseSeason === season;
+
+const seasonsNamedBy = (parsed: ParsedRelease) => [
+  ...parsed.episodes.flatMap((episode) => (episode.season === undefined ? [] : [episode.season])),
+  ...(parsed.pack?.seasons ?? []),
+];
+
+function namesRelease(alias: ReleaseCondition, parsed: ParsedRelease, releaseTitle: string): boolean {
+  if (alias.filter !== undefined && !releaseFilterMatches(alias.filter, releaseTitle)) return false;
+  return seasonsNamedBy(parsed).every((season) => releaseSeasonAllows(alias, season));
+}
 
 /** `part 7` between the show's name and the season's: the part's number, which says nothing the season name doesn't. */
 const PART_NUMBER = / part \d{1,2}$/;
 
-/**
- * A normalized title that is an alias and a season's name, in either order:
- * `<alias> <season>`, `<alias> part N <season>` or `<season> <alias>`
- * (normalizing drops `:` and `-`). `aliasOf` says whether the rest is an
- * alias; the result is that alias and the season's scene season.
- */
 export function splitSeasonName<A>(
   normalized: string,
-  seasons: SeasonName[],
+  seasons: SeasonNameForMatch[],
   aliasOf: (rest: string) => A | undefined,
-): { alias: A; sceneSeason: number } | undefined {
-  for (const { normalized: name, sceneSeason } of seasons) {
+): { alias: A; seasonName: SeasonNameForMatch } | undefined {
+  for (const seasonName of seasons) {
+    const name = seasonName.normalized;
     const before = normalized.endsWith(` ${name}`) ? aliasOf(normalized.slice(0, -name.length - 1).replace(PART_NUMBER, '')) : undefined;
     const after = before ?? (normalized.startsWith(`${name} `) ? aliasOf(normalized.slice(name.length + 1)) : undefined);
-    if (after !== undefined) return { alias: after, sceneSeason };
+    if (after !== undefined) return { alias: after, seasonName };
   }
   return undefined;
 }
@@ -44,16 +54,7 @@ export function splitSeasonName<A>(
 /** The resolveUnits result. */
 export type { ResolveResult };
 
-/**
- * `season` is a season the title names after an alias without an AniDB link
- * (`Ember Rite S2`, `Ember Rite 2nd Season`); resolveUnits reads an anime
- * release's number within it. `sceneSeason` is the scene season of the alias
- * that matched, when XEM lists it under one; resolveUnits reads an absolute
- * number in that scene season.
- */
-export type TitleMatch =
-  | { ok: true; aliasId?: Id<'workAliases'>; anidbId?: number; season?: number; sceneSeason?: number }
-  | { ok: false; detail: 'title' | 'kind' | 'extras' };
+export type TitleMatch = { ok: true; aliasId?: Id<'workAliases'>; alias: MatchedAlias } | { ok: false; detail: 'title' | 'kind' | 'extras' };
 
 /**
  * A wrong episode keeps resolveUnits' `problem`, and for `ambiguous` the
@@ -91,7 +92,7 @@ function aliasByWords(parsed: ParsedRelease, work: WorkForMatch): WorkForMatch['
   const parts = parsed.normalizedTitle.match(/\bpart \d{1,2}\b/g) ?? [];
   let best: { alias: WorkForMatch['aliases'][number]; shared: number; size: number } | undefined;
   for (const alias of work.aliases) {
-    if (alias.sceneSeason !== undefined || parts.some((part) => !` ${alias.normalized} `.includes(` ${part} `))) continue;
+    if (alias.partSeason !== undefined || parts.some((part) => !` ${alias.normalized} `.includes(` ${part} `))) continue;
     const aliasWords = new Set(words(alias.normalized));
     const shared = title.filter((word) => aliasWords.has(word)).length;
     if (shared * 2 < title.length) continue;
@@ -105,8 +106,10 @@ function aliasByWords(parsed: ParsedRelease, work: WorkForMatch): WorkForMatch['
  * form: normalizeTitle deletes hyphens, so `Spider-Man` is `spiderman` but
  * `Spider.Man` is `spider man`.
  */
-const aliasFor = (normalized: string, work: WorkForMatch) =>
-  work.aliases.find((entry) => entry.normalized === normalized) ?? work.aliases.find((entry) => compactTitle(entry.normalized) === compactTitle(normalized));
+const aliasFor = (normalized: string, aliases: WorkAlias[]) =>
+  aliases.find((entry) => entry.normalized === normalized) ?? aliases.find((entry) => compactTitle(entry.normalized) === compactTitle(normalized));
+
+const hasNoPartSeason = (alias: WorkAlias) => alias.partSeason === undefined;
 
 /** A season written after a name, normalized: `s2`, `s02`, `season 2`, `2nd season`. */
 const SEASON_MARK = /^(.+) (?:s0*(\d{1,2})|season 0*(\d{1,2})|(\d{1,2})(?:st|nd|rd|th) season)$/;
@@ -129,7 +132,7 @@ export function splitSeasonMark(normalized: string): { base: string; season: num
  */
 function namedSeason(normalized: string, work: WorkForMatch): { season: number; base: WorkForMatch['aliases'][number] } | undefined {
   const mark = splitSeasonMark(normalized);
-  const base = mark ? aliasFor(mark.base, work) : undefined;
+  const base = mark ? aliasFor(mark.base, work.aliases) : undefined;
   return base && mark ? { season: mark.season, base } : undefined;
 }
 
@@ -139,35 +142,50 @@ function namedSeason(normalized: string, work: WorkForMatch): { season: number; 
  * matches through its first side that is.
  */
 export function matchTitle(parsed: ParsedRelease, item: IndexerItem, work: WorkForMatch): TitleMatch {
-  const whole = matchName(parsed, item, work);
+  const forRelease: WorkForMatch = { ...work, aliases: work.aliases.filter((alias) => namesRelease(alias, parsed, item.title)) };
+  const whole = matchName(parsed, item, forRelease);
   if (whole.ok || whole.detail !== 'title') return whole;
   for (const side of titleSides(parsed.title)) {
-    const match = matchName({ ...parsed, title: side, normalizedTitle: normalizeTitle(side) }, item, work);
+    const match = matchName({ ...parsed, title: side, normalizedTitle: normalizeTitle(side) }, item, forRelease);
     if (match.ok || match.detail !== 'title') return match;
   }
   return whole;
 }
 
-function matchName(parsed: ParsedRelease, item: IndexerItem, work: WorkForMatch): TitleMatch {
+type TitleCandidate = { aliasId: Id<'workAliases'>; reading: MatchedAlias };
+
+function titleCandidate(parsed: ParsedRelease, item: IndexerItem, work: WorkForMatch): TitleCandidate | undefined {
+  const direct = aliasFor(parsed.normalizedTitle, work.aliases);
+  if (direct?.anidbId !== undefined) return { aliasId: direct.aliasId, reading: aliasReading(direct) };
   const named = namedSeason(parsed.normalizedTitle, work);
-  // `JoJo's Bizarre Adventure Steel Ball Run`: an alias with no season of its own, and a season's name.
-  const bySeasonName = splitSeasonName(parsed.normalizedTitle, work.seasonNames ?? [], (rest) => {
-    const base = aliasFor(rest, work);
-    return base?.sceneSeason === undefined ? base : undefined;
-  });
-  // `Ember Rite S2` matches through `Ember Rite`, without that alias's AniDB entry: the entry is the first season's. So does a season's name.
-  const alias =
-    aliasFor(parsed.normalizedTitle, work) ??
-    (named ? { ...named.base, anidbId: undefined } : undefined) ??
-    (bySeasonName ? { ...bySeasonName.alias, anidbId: undefined, sceneSeason: bySeasonName.sceneSeason } : undefined) ??
-    (sharesId(item, work) ? aliasByWords(parsed, work) : undefined);
-  if (!alias || (work.kind === 'movie' && !yearsAgree(parsed.year, work.year))) return { ok: false, detail: 'title' };
+  if (named) return { aliasId: (direct ?? named.base).aliasId, reading: { kind: 'namedSeason', season: named.season } };
+  if (direct?.partSeason !== undefined) return { aliasId: direct.aliasId, reading: aliasReading(direct) };
+  const bySeasonName = splitSeasonName(parsed.normalizedTitle, work.seasonNames ?? [], (rest) => aliasFor(rest, work.aliases.filter(hasNoPartSeason)));
+  if (bySeasonName) return { aliasId: bySeasonName.alias.aliasId, reading: seasonNameReading(bySeasonName.seasonName) };
+  if (direct) return { aliasId: direct.aliasId, reading: aliasReading(direct) };
+  const byWords = sharesId(item, work) ? aliasByWords(parsed, work) : undefined;
+  return byWords && { aliasId: byWords.aliasId, reading: aliasReading(byWords) };
+}
+
+function matchName(parsed: ParsedRelease, item: IndexerItem, work: WorkForMatch): TitleMatch {
+  const found = titleCandidate(parsed, item, work);
+  if (!found || (work.kind === 'movie' && !yearsAgree(parsed.year, work.year))) return { ok: false, detail: 'title' };
   const numbered = parsed.episodes.length > 0 || parsed.pack !== undefined;
   if (work.kind === 'series' ? !numbered && parsed.airDate === undefined : numbered) return { ok: false, detail: 'kind' };
   if (parsed.extras) return { ok: false, detail: 'extras' };
-  if (alias.anidbId !== undefined) return { ok: true, aliasId: alias.aliasId, anidbId: alias.anidbId };
-  if (named) return { ok: true, aliasId: alias.aliasId, season: named.season };
-  return alias.sceneSeason === undefined ? { ok: true, aliasId: alias.aliasId } : { ok: true, aliasId: alias.aliasId, sceneSeason: alias.sceneSeason };
+  return { ok: true, aliasId: found.aliasId, alias: found.reading };
+}
+
+const PART_NAMES_WRITE_SEASON = 1;
+
+const partReading = (partSeason: PartSeason, releaseSeason = PART_NAMES_WRITE_SEASON): MatchedAlias => ({ kind: 'partSeason', ...partSeason, releaseSeason });
+
+const seasonNameReading = ({ season, sceneSeason }: SeasonNameForMatch): MatchedAlias =>
+  partReading(sceneSeason === undefined ? { season, ordering: 'tmdb' } : { season: sceneSeason, ordering: 'scene' });
+
+function aliasReading(alias: WorkAlias): MatchedAlias {
+  if (alias.anidbId !== undefined) return { kind: 'anidb', anidbId: alias.anidbId };
+  return alias.partSeason ? partReading(alias.partSeason, alias.releaseSeason) : { kind: 'plain' };
 }
 
 /** Decides the Units a release covers in the search group, from the resolveUnits result. */

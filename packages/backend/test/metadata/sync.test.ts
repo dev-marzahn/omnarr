@@ -1,4 +1,4 @@
-import { harbourLightsRestructured, longSeries, SERIES } from '@omnarr/e2e/fakes/tmdb/fixtures';
+import { harbourLightsRestructured, jojoParts, longSeries, SERIES } from '@omnarr/e2e/fakes/tmdb/fixtures';
 // The write path through library.subscribe and syncWork, with
 // TMDB, XEM and Anime-Lists behind fakes. Mapping rows and external IDs have
 // no public reader of their own, so these tests read the tables.
@@ -23,8 +23,10 @@ vi.mock('../../convex/metadata/reconcile', async (importOriginal) => {
 });
 import { seedFile } from '../fakePrepare';
 import blackLagoonShape from '../fixtures/xem/blackLagoonShape.json';
+import jojoPartsNames from '../fixtures/xem/jojoPartsNames.json';
+import jojoPartsShape from '../fixtures/xem/jojoPartsShape.json';
 import partial from '../fixtures/xem/partial.json';
-import { asAdmin, seedAnimeLists, seedLibraries, seedXemList, setup, useMetadataFakes, type Backend, type Libraries } from '../setup';
+import { asAdmin, fetchXem, seedAnimeLists, seedLibraries, seedXemList, setup, useMetadataFakes, type Backend, type Libraries } from '../setup';
 
 let t: Backend;
 let admin: Awaited<ReturnType<typeof asAdmin>>;
@@ -160,7 +162,8 @@ describe('subscribe to an anime with Anime-Lists entries', () => {
 describe('scene numbering differs from TMDB', () => {
   test('links XEM by absolute position when TVDB has one season of 24 and TMDB two of 12 (rule 3)', async () => {
     await seedXemList(t, [7700003]);
-    useMetadataFakes({ xem: { shows: { 7700003: { all: blackLagoonShape, names: { result: 'success', data: { all: { en: ['Northbound'] } } } } } } });
+    useMetadataFakes({ xem: { shows: { 7700003: { all: blackLagoonShape, names: [{ Northbound: -1 }] } } } });
+    await fetchXem(t);
     const { workId } = await subscribe('900003', [1, 2]);
     const { mappings, aliases, metadata } = await stored(workId);
     expect(mappings.filter((m) => m.ordering === 'scene' && m.unit === 'S2E1')).toEqual([
@@ -180,6 +183,41 @@ describe('scene numbering differs from TMDB', () => {
     const { mappings, metadata } = await stored(workId);
     expect(mappings.filter((m) => m.source === 'xem')).toEqual([]);
     expect(metadata).toMatchObject({ mappingStatus: 'partial', mappingNotes: ['XEM lists 23 regular episodes, TMDB 24; XEM numbers are not linked.'] });
+  });
+});
+
+describe("XEM's names in a sync", () => {
+  const xemAliases = (workId: Id<'works'>) =>
+    t.run(async (ctx) =>
+      (
+        await ctx.db
+          .query('workAliases')
+          .withIndex('by_work', (q) => q.eq('workId', workId))
+          .collect()
+      )
+        .filter((alias) => alias.source === 'xem')
+        .map(({ title, partSeason }) => ({ title, sceneSeason: partSeason?.season })),
+    );
+
+  test("a sync asks XEM only for the Work's map and takes its names from the daily fetch, each with its scene season", async () => {
+    const requests = useMetadataFakes({ series: [...SERIES, jojoParts()], xem: { shows: { 7700009: { all: jojoPartsShape, names: jojoPartsNames } } } });
+    await fetchXem(t);
+    requests.length = 0;
+    const { workId } = await subscribe('900009', [5, 6]);
+    expect(requests.filter((url) => url.hostname === 'thexem.info').map((url) => url.pathname)).toEqual(['/map/all']);
+    expect(await xemAliases(workId)).toEqual(
+      expect.arrayContaining([
+        { title: "JoJo's Bizarre Adventure - Stone Ocean", sceneSeason: 5 },
+        { title: "JoJo's Bizarre Adventure (2012)", sceneSeason: undefined },
+      ]),
+    );
+  });
+
+  test('a Work XEM has a map for but no names gets no XEM aliases', async () => {
+    useMetadataFakes({ xem: { shows: { 7700003: { all: blackLagoonShape } } } });
+    await fetchXem(t);
+    const { workId } = await subscribe('900003', [1, 2]);
+    expect(await xemAliases(workId)).toEqual([]);
   });
 });
 
@@ -320,7 +358,8 @@ describe('sync failures and limits', () => {
 
   test('a XEM timeout keeps the xem rows, XEM aliases and status, with a note', async () => {
     await seedXemList(t, [7700003]);
-    useMetadataFakes({ xem: { shows: { 7700003: { all: blackLagoonShape, names: { result: 'success', data: { all: { en: ['Northbound'] } } } } } } });
+    useMetadataFakes({ xem: { shows: { 7700003: { all: blackLagoonShape, names: [{ Northbound: -1 }] } } } });
+    await fetchXem(t);
     const { workId } = await subscribe('900003', [1, 2]);
     const before = await stored(workId);
     useMetadataFakes({ xem: { down: true } });
@@ -332,6 +371,79 @@ describe('sync failures and limits', () => {
       mappingStatus: 'complete',
       mappingNotes: ['XEM could not be reached; its numbers are from the last successful fetch.'],
     });
+  });
+
+  test("a XEM timeout keeps the stored season names, whose scene seasons come from XEM's rows", async () => {
+    const season6AsScene7 = {
+      ...jojoPartsShape,
+      data: jojoPartsShape.data.map((entry) => (entry.scene.season === 6 ? { ...entry, scene: { ...entry.scene, season: 7 } } : entry)),
+    };
+    await seedXemList(t, [7700009]);
+    useMetadataFakes({ series: [...SERIES, jojoParts()], xem: { shows: { 7700009: { all: season6AsScene7, names: jojoPartsNames } } } });
+    await fetchXem(t);
+    const { workId } = await subscribe('900009', [5, 6]);
+    const before = (await stored(workId)).metadata?.seasonNames;
+    expect(before).toContainEqual(expect.objectContaining({ season: 6, sceneSeason: 7 }));
+    useMetadataFakes({ series: [...SERIES, jojoParts()], xem: { down: true } });
+    await t.action(internal.metadata.sync.syncWork, { workId });
+    expect((await stored(workId)).metadata?.seasonNames).toEqual(before);
+  });
+
+  test("a scene-mapping name for a TVDB season reads in XEM's scene season for it, and while XEM is down the stored alias stays as XEM placed it", async () => {
+    const season6AsScene7 = {
+      ...jojoPartsShape,
+      data: jojoPartsShape.data.map((entry) => (entry.scene.season === 6 ? { ...entry, scene: { ...entry.scene, season: 7 } } : entry)),
+    };
+    await seedXemList(t, [7700009]);
+    await t.run((ctx) =>
+      ctx.db.insert('sceneMappings', { mappingId: 's-sbr', tvdbId: 7700009, title: 'JoJo SBR', tvdbSeason: 6, releaseSeason: 1, seenVersion: 'v1' }),
+    );
+    useMetadataFakes({ series: [...SERIES, jojoParts()], xem: { shows: { 7700009: { all: season6AsScene7, names: jojoPartsNames } } } });
+    await fetchXem(t);
+    const { workId } = await subscribe('900009', [5, 6]);
+    const sbr = async () =>
+      (
+        await t.run((ctx) =>
+          ctx.db
+            .query('workAliases')
+            .withIndex('by_work', (q) => q.eq('workId', workId))
+            .collect(),
+        )
+      )
+        .filter((alias) => alias.source === 'sceneMapping')
+        .map(({ title, partSeason, releaseSeason }) => ({ title, partSeason, releaseSeason }));
+    expect(await sbr()).toEqual([{ title: 'JoJo SBR', partSeason: { season: 7, ordering: 'scene' }, releaseSeason: 1 }]);
+
+    useMetadataFakes({ series: [...SERIES, jojoParts()], xem: { down: true } });
+    await t.action(internal.metadata.sync.syncWork, { workId });
+    expect(await sbr()).toEqual([{ title: 'JoJo SBR', partSeason: { season: 7, ordering: 'scene' }, releaseSeason: 1 }]);
+  });
+
+  test('syncs while XEM is down keep every alias once, a scene name placed by a season name included', async () => {
+    await seedXemList(t, [7700009]);
+    await t.run(async (ctx) => {
+      await ctx.db.insert('sceneMappings', { mappingId: 's-sbr', tvdbId: 7700009, title: 'JoJo SBR', tvdbSeason: 6, seenVersion: 'v1' });
+      await ctx.db.insert('sceneMappings', { mappingId: 's-split', tvdbId: 7700009, title: "JoJo's Bizarre Adventure Steel Ball Run", seenVersion: 'v1' });
+    });
+    useMetadataFakes({ series: [...SERIES, jojoParts()], xem: { shows: { 7700009: { all: jojoPartsShape, names: jojoPartsNames } } } });
+    await fetchXem(t);
+    const { workId } = await subscribe('900009', [5, 6]);
+    const aliasRows = () =>
+      t.run(async (ctx) =>
+        (
+          await ctx.db
+            .query('workAliases')
+            .withIndex('by_work', (q) => q.eq('workId', workId))
+            .collect()
+        ).map(({ source, normalized, partSeason }) => `${source}:${normalized}:${partSeason?.season ?? ''}`),
+      );
+    const before = await aliasRows();
+    expect(before).toContain('sceneMapping:jojos bizarre adventure steel ball run:6');
+
+    useMetadataFakes({ series: [...SERIES, jojoParts()], xem: { down: true } });
+    await t.action(internal.metadata.sync.syncWork, { workId });
+    await t.action(internal.metadata.sync.syncWork, { workId });
+    expect((await aliasRows()).sort()).toEqual(before.sort());
   });
 
   test('a Work deleted while its sync runs makes every write a no-op', async () => {
@@ -349,7 +461,7 @@ describe('sync failures and limits', () => {
       workId,
       version: 9,
       cursor: null,
-      keepXem: { rows: false, aliases: false },
+      xemDown: { rows: false, names: false },
       aliases: [{ title: 'X', normalized: 'x', source: 'tmdb' }],
       fields: {
         title: 'X',
@@ -426,6 +538,21 @@ describe('sync failures and limits', () => {
   test('a successful first write at subscribe forgets the ticked seasons', async () => {
     const { workId } = await subscribe('900001', [2]);
     expect((await stored(workId)).metadata).not.toHaveProperty('initialSeasons');
+  });
+});
+
+describe('season names', () => {
+  test('a series XEM does not list names each named season, with no scene season', async () => {
+    useMetadataFakes({ series: [...SERIES, jojoParts()] });
+    const { workId } = await subscribe('900009', [5, 6]);
+    expect((await stored(workId)).metadata?.seasonNames).toEqual([
+      { season: 1, name: 'Phantom Blood & Battle Tendency', normalized: 'phantom blood and battle tendency' },
+      { season: 2, name: 'Stardust Crusaders', normalized: 'stardust crusaders' },
+      { season: 3, name: 'Diamond Is Unbreakable', normalized: 'diamond is unbreakable' },
+      { season: 4, name: 'Golden Wind', normalized: 'golden wind' },
+      { season: 5, name: 'Stone Ocean', normalized: 'stone ocean' },
+      { season: 6, name: 'Steel Ball Run', normalized: 'steel ball run' },
+    ]);
   });
 });
 

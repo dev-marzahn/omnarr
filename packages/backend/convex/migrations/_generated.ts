@@ -31,4 +31,6 @@ export const { start, status } = release.upgrade([
   internal.migrations["0003_work_alias_scene_season"].default,
   internal.migrations["0004_grab_kind"].default,
   internal.migrations["0005_definition_yaml_table"].default,
+  internal.migrations["0006_scene_mapping_seasons_and_filters"].default,
+  internal.migrations["0007_work_alias_part_season"].default,
 ]);

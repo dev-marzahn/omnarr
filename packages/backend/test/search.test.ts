@@ -13,6 +13,7 @@ import jojoPartsNames from './fixtures/xem/jojoPartsNames.json';
 import jojoPartsShape from './fixtures/xem/jojoPartsShape.json';
 import {
   asAdmin,
+  fetchXem,
   capabilities,
   INDEXER_KEY,
   seedAnimeLists,
@@ -390,6 +391,7 @@ describe('an anime part named by its XEM season name', () => {
       xem: { shows: { 7700009: { all: jojoPartsShape, names: jojoPartsNames } } },
       indexers: { 'indexer.fake': anyQuery },
     });
+    await fetchXem(t);
     await seedIndexer(t);
     const { workId } = await admin.action(api.api.library.subscribe, {
       tmdbId: '900009',
@@ -861,9 +863,10 @@ describe('a Nyaa indexer', () => {
           tvdb: { season: s, episode: i + 1, absolute: (s - 1) * 12 + i + 1 },
         })),
       );
-      const names = { result: 'success', data: { all: { ja: ['Hoshi no Chouchin'] } }, message: '' };
+      const names = [{ 'Hoshi no Chouchin': -1 }];
       await seedXemList(t, [7700002]);
       useFetchFakes({ indexers: { 'nyaa.fake': fake.handle }, xem: { shows: { 7700002: { all: { result: 'success', data, message: '' }, names } } } });
+      await fetchXem(t);
       const nyaaId = await seedNyaa(t);
       const workId = await subscribeStarLantern([2]);
       fake.setItems(items);

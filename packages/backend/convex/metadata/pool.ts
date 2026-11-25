@@ -43,6 +43,7 @@ export async function enqueueSourceFetch(ctx: MutationCtx, source: MappingSource
   const fetchFn = {
     animeLists: internal.mapping.animeLists.fetchAnimeLists,
     xem: internal.mapping.xem.fetchHavemap,
+    xemNames: internal.mapping.xem.fetchXemNames,
     sceneMapping: internal.mapping.sceneMappings.fetchSceneMappings,
   }[source];
   await metadataPool.enqueueAction(ctx, fetchFn, {});

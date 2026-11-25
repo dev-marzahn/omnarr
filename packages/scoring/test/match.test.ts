@@ -1,4 +1,4 @@
-import type { IndexerItem } from '@omnarr/contracts';
+import type { IndexerItem, ParsedRelease } from '@omnarr/contracts';
 import { parseRelease } from '@omnarr/parser';
 import { describe, expect, test } from 'vite-plus/test';
 
@@ -7,6 +7,7 @@ import { filterWorks, matchTitle, matchUnits, type ResolveResult, type WorkForMa
 import { release } from './release.ts';
 
 const alias = (id: string) => id as Id<'workAliases'>;
+const plain = { kind: 'plain' } as const;
 const unit = (id: string) => id as Id<'units'>;
 
 const harbor: WorkForMatch = {
@@ -48,12 +49,12 @@ const episode = { episodes: [{ season: 1, episode: 2 }] };
 
 describe('matchTitle', () => {
   test('matches an alias by normalized title and returns it', () => {
-    expect(matchTitle(release({ normalizedTitle: 'long harbor', ...episode }), item(), harbor)).toEqual({ ok: true, aliasId: 'a2' });
+    expect(matchTitle(release({ normalizedTitle: 'long harbor', ...episode }), item(), harbor)).toEqual({ ok: true, aliasId: 'a2', alias: plain });
   });
 
   test('returns the AniDB ID of the alias that matched', () => {
     const parsed = release({ normalizedTitle: 'lantern keeper s2', episodes: [{ absolute: 5 }] });
-    expect(matchTitle(parsed, item(), keeper)).toEqual({ ok: true, aliasId: 'k2', anidbId: 4242 });
+    expect(matchTitle(parsed, item(), keeper)).toEqual({ ok: true, aliasId: 'k2', alias: { kind: 'anidb', anidbId: 4242 } });
   });
 
   test('rejects another title', () => {
@@ -73,11 +74,15 @@ describe('matchTitle', () => {
     const anime = { episodes: [{ absolute: 3 }] };
 
     test('a release without the hyphen matches the hyphenated alias', () => {
-      expect(matchTitle(release({ normalizedTitle: 'mori sama keeps watch', ...anime }), item(), mori)).toEqual({ ok: true, aliasId: 'm1' });
+      expect(matchTitle(release({ normalizedTitle: 'mori sama keeps watch', ...anime }), item(), mori)).toEqual({ ok: true, aliasId: 'm1', alias: plain });
     });
 
     test('a hyphenated release matches the alias without it, with its AniDB entry', () => {
-      expect(matchTitle(release({ normalizedTitle: 'morisamaember arc', ...anime }), item(), mori)).toEqual({ ok: true, aliasId: 'm2', anidbId: 5151 });
+      expect(matchTitle(release({ normalizedTitle: 'morisamaember arc', ...anime }), item(), mori)).toEqual({
+        ok: true,
+        aliasId: 'm2',
+        alias: { kind: 'anidb', anidbId: 5151 },
+      });
     });
   });
 
@@ -87,17 +92,93 @@ describe('matchTitle', () => {
     test.each(['long harbor s2', 'long harbor s02', 'long harbor season 2', 'long harbor 2nd season'])(
       '%s matches long harbor with season 2, without an ID',
       (title) => {
-        expect(matchTitle(release({ normalizedTitle: title, ...anime }), item(), harbor)).toEqual({ ok: true, aliasId: 'a2', season: 2 });
+        expect(matchTitle(release({ normalizedTitle: title, ...anime }), item(), harbor)).toEqual({
+          ok: true,
+          aliasId: 'a2',
+          alias: { kind: 'namedSeason', season: 2 },
+        });
       },
     );
 
+    test('a title that is an alias itself and also an alias with a season mark names that season, through itself', () => {
+      const withOwnAlias: WorkForMatch = { ...harbor, aliases: [...harbor.aliases, { aliasId: alias('a3'), normalized: 'long harbor 2nd season' }] };
+      expect(matchTitle(release({ normalizedTitle: 'long harbor 2nd season', ...anime }), item(), withOwnAlias)).toEqual({
+        ok: true,
+        aliasId: 'a3',
+        alias: { kind: 'namedSeason', season: 2 },
+      });
+    });
+
     test("an AniDB-linked alias's season comes from its entry, not the title", () => {
-      expect(matchTitle(release({ normalizedTitle: 'lantern keeper s2', ...anime }), item(), keeper)).toEqual({ ok: true, aliasId: 'k2', anidbId: 4242 });
+      expect(matchTitle(release({ normalizedTitle: 'lantern keeper s2', ...anime }), item(), keeper)).toEqual({
+        ok: true,
+        aliasId: 'k2',
+        alias: { kind: 'anidb', anidbId: 4242 },
+      });
     });
 
     test('a Work whose own name ends in a season, with no alias before it, names no season', () => {
       const sequel: WorkForMatch = { kind: 'series', aliases: [{ aliasId: alias('q1'), normalized: 'quiet signal 2nd season' }], ids: { tmdb: '900010' } };
-      expect(matchTitle(release({ normalizedTitle: 'quiet signal 2nd season', ...anime }), item(), sequel)).toEqual({ ok: true, aliasId: 'q1' });
+      expect(matchTitle(release({ normalizedTitle: 'quiet signal 2nd season', ...anime }), item(), sequel)).toEqual({ ok: true, aliasId: 'q1', alias: plain });
+    });
+  });
+
+  describe("an alias with a TMDB season's name", () => {
+    const parts: WorkForMatch = {
+      kind: 'series',
+      aliases: [{ aliasId: alias('j1'), normalized: 'jojos bizarre adventure' }],
+      seasonNames: [
+        { normalized: 'stone ocean', season: 5, sceneSeason: 5 },
+        { normalized: 'steel ball run', season: 6 },
+      ],
+      ids: { tmdb: '900009' },
+    };
+    const absolute = { episodes: [{ absolute: 3 }] };
+
+    test("carries XEM's scene season when the name has one", () => {
+      expect(matchTitle(release({ normalizedTitle: 'jojos bizarre adventure stone ocean', ...absolute }), item(), parts)).toEqual({
+        ok: true,
+        aliasId: 'j1',
+        alias: { kind: 'partSeason', season: 5, ordering: 'scene', releaseSeason: 1 },
+      });
+    });
+
+    test('carries the TMDB season when XEM gives the name none', () => {
+      expect(matchTitle(release({ normalizedTitle: 'jojos bizarre adventure steel ball run', ...absolute }), item(), parts)).toEqual({
+        ok: true,
+        aliasId: 'j1',
+        alias: { kind: 'partSeason', season: 6, ordering: 'tmdb', releaseSeason: 1 },
+      });
+    });
+
+    test("a stored alias of the show and the season's name reads the season, not plain", () => {
+      const withAlt: WorkForMatch = { ...parts, aliases: [...parts.aliases, { aliasId: alias('j2'), normalized: 'jojos bizarre adventure steel ball run' }] };
+      expect(matchTitle(release({ normalizedTitle: 'jojos bizarre adventure steel ball run', ...absolute }), item(), withAlt)).toEqual({
+        ok: true,
+        aliasId: 'j1',
+        alias: { kind: 'partSeason', season: 6, ordering: 'tmdb', releaseSeason: 1 },
+      });
+    });
+
+    test("an AniDB-linked alias is the show's name before a season's name too, when no other alias has that name", () => {
+      const onlyAnidb: WorkForMatch = { ...parts, aliases: [{ aliasId: alias('a1'), normalized: 'jojos bizarre adventure', anidbId: 9901 }] };
+      expect(matchTitle(release({ normalizedTitle: 'jojos bizarre adventure steel ball run', ...absolute }), item(), onlyAnidb)).toEqual({
+        ok: true,
+        aliasId: 'a1',
+        alias: { kind: 'partSeason', season: 6, ordering: 'tmdb', releaseSeason: 1 },
+      });
+    });
+
+    test("a part's alias listed before the same general alias does not hide it", () => {
+      const xemFirst: WorkForMatch = {
+        ...parts,
+        aliases: [{ aliasId: alias('x1'), normalized: 'jojos bizarre adventure', partSeason: { season: 2, ordering: 'scene' } }, ...parts.aliases],
+      };
+      expect(matchTitle(release({ normalizedTitle: 'jojos bizarre adventure steel ball run', ...absolute }), item(), xemFirst)).toEqual({
+        ok: true,
+        aliasId: 'j1',
+        alias: { kind: 'partSeason', season: 6, ordering: 'tmdb', releaseSeason: 1 },
+      });
     });
   });
 
@@ -121,11 +202,15 @@ describe('matchTitle', () => {
       ['[Group] 星之灯笼/Star Lantern - 04 [1080p]', english, 's1'],
       ['[Group] 星之灯笼 / 星の灯籠 / Star Lantern - 04 [1080p]', english, 's1'],
     ])('%s matches through either side (%#)', (title, work, aliasId) => {
-      expect(matchTitle(parse(title), item(), work)).toEqual({ ok: true, aliasId });
+      expect(matchTitle(parse(title), item(), work)).toEqual({ ok: true, aliasId, alias: plain });
     });
 
     test('a side with a season mark names the season', () => {
-      expect(matchTitle(parse('[Group] 星之灯笼 / Star Lantern S2 - 04 [1080p]'), item(), english)).toEqual({ ok: true, aliasId: 's1', season: 2 });
+      expect(matchTitle(parse('[Group] 星之灯笼 / Star Lantern S2 - 04 [1080p]'), item(), english)).toEqual({
+        ok: true,
+        aliasId: 's1',
+        alias: { kind: 'namedSeason', season: 2 },
+      });
     });
 
     test('a slash inside a Latin name is no separator, and neither side may be another title', () => {
@@ -141,7 +226,11 @@ describe('matchTitle', () => {
       ['imdbid without tt', { imdbid: '9900001' }],
       ['tmdbid', { tmdbid: '900001' }],
     ])('a renamed title matches through %s when it shares half its words', (_name, ids) => {
-      expect(matchTitle(release({ normalizedTitle: 'long harbor stories', ...episode }), item({ ids }), harbor)).toEqual({ ok: true, aliasId: 'a2' });
+      expect(matchTitle(release({ normalizedTitle: 'long harbor stories', ...episode }), item({ ids }), harbor)).toEqual({
+        ok: true,
+        aliasId: 'a2',
+        alias: plain,
+      });
     });
 
     test('an ID with too few shared words is an indexer mistake', () => {
@@ -194,6 +283,49 @@ describe('matchTitle', () => {
 
   test('extras are rejected', () => {
     expect(matchTitle(release({ normalizedTitle: 'the long harbor', extras: true, ...episode }), item(), harbor)).toEqual({ ok: false, detail: 'extras' });
+  });
+
+  describe("a scene-mapping name that names only some releases (Sonarr's filterRegex and sceneSeasonNumber)", () => {
+    const babylon: WorkForMatch = {
+      kind: 'series',
+      aliases: [{ aliasId: alias('b1'), normalized: 'babylon', filter: '(?i)-(BRAVERY|RiVER)$' }],
+      ids: { tmdb: '900201' },
+    };
+    const newBlood: WorkForMatch = {
+      kind: 'series',
+      aliases: [
+        { aliasId: alias('d1'), normalized: 'dexter new blood' },
+        { aliasId: alias('d2'), normalized: 'dexter', partSeason: { season: 1, ordering: 'scene' }, releaseSeason: 9 },
+      ],
+      ids: { tmdb: '900202' },
+    };
+    const dexter = (episodes: ParsedRelease['episodes'], pack?: ParsedRelease['pack']) =>
+      release({ normalizedTitle: 'dexter', episodes, ...(pack ? { pack } : {}) });
+
+    test('a filtered name matches only the release titles its pattern matches', () => {
+      const babylonRelease = release({ normalizedTitle: 'babylon', ...episode });
+      expect(matchTitle(babylonRelease, item({ title: 'Babylon.S01E02.720p.HDTV.x264-RiVER' }), babylon)).toMatchObject({ ok: true, aliasId: 'b1' });
+      expect(matchTitle(babylonRelease, item({ title: 'Babylon.S01E02.720p.HDTV.x264-OTHER' }), babylon)).toEqual({ ok: false, detail: 'title' });
+    });
+
+    test('a name with a release season matches releases of that season only', () => {
+      expect(matchTitle(dexter([{ season: 9, episode: 1 }]), item(), newBlood)).toMatchObject({ ok: true, aliasId: 'd2' });
+      expect(matchTitle(dexter([{ season: 1, episode: 1 }]), item(), newBlood)).toEqual({ ok: false, detail: 'title' });
+      expect(matchTitle(dexter([], { seasons: [9], full: true }), item(), newBlood)).toMatchObject({ ok: true, aliasId: 'd2' });
+      expect(matchTitle(dexter([], { seasons: [8, 9], full: true }), item(), newBlood)).toEqual({ ok: false, detail: 'title' });
+    });
+
+    test('a release that names no season, by absolute number, fits a name with a release season', () => {
+      expect(matchTitle(dexter([{ absolute: 3 }]), item(), newBlood)).toMatchObject({ ok: true, aliasId: 'd2' });
+    });
+
+    test("a catastrophic-backtracking filter doesn't stall matching", () => {
+      const evil: WorkForMatch = { ...babylon, aliases: [{ aliasId: alias('b2'), normalized: 'babylon', filter: '(a+)+$' }] };
+      const started = performance.now();
+      const match = matchTitle(release({ normalizedTitle: 'babylon', ...episode }), item({ title: `Babylon.${'a'.repeat(20_000)}!` }), evil);
+      expect(match).toEqual({ ok: false, detail: 'title' });
+      expect(performance.now() - started).toBeLessThan(1_000);
+    });
   });
 });
 

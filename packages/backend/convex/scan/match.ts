@@ -153,7 +153,7 @@ export const identifyFolder = internalQuery({
       return { ...base, work: workId ? await refOfWork(ctx, workId) : null };
     }
     const works = new Set<Id<'works'>>();
-    for (const { workId } of await findWorksByTitle(ctx, base.normalizedTitle)) {
+    for (const { workId } of await findWorksByTitle(ctx, base.normalizedTitle, 'folderName')) {
       const work = await ctx.db.get(workId);
       if (work && work.kind === kind && work.libraryId === libraryId && sameYear(kind, parsed.year, work.year)) works.add(workId);
     }
@@ -297,7 +297,7 @@ const label = (unit: Doc<'units'>): ScanUnitLabel => ({
 /** Reads a file's numbers in one ordering: through resolveUnits for a Work in the library, else against TMDB's snapshot. */
 async function readIn(ctx: MutationCtx, input: FolderInput, ordering: z.infer<typeof ScanNumbering>, episodes: ParsedEpisode[]): Promise<Reading> {
   if (input.work?.workId) {
-    const result = await resolveUnits(ctx, input.work.workId, episodes, undefined, undefined, { orderings: [ordering] });
+    const result = await resolveUnits(ctx, input.work.workId, episodes, undefined, { kind: 'plain' }, { orderings: [ordering] });
     if (result.problem || result.unitIds.length === 0) return null;
     const units = (await Promise.all(result.unitIds.map((id) => ctx.db.get(id)))).filter((unit) => unit !== null);
     return { unitIds: result.unitIds, units: units.map(label) };

@@ -31,7 +31,7 @@ import { languages } from './passes/languages.ts';
 import { numbers } from './passes/numbers.ts';
 import { quality } from './passes/quality.ts';
 import { streaming } from './passes/streaming.ts';
-import { seriesTitleYear, titleInitials } from './passes/title.ts';
+import { seriesTitleYear, titleInitials, withTitle } from './passes/title.ts';
 import { tailTokens } from './passes/tokens.ts';
 import { video } from './passes/video.ts';
 
@@ -149,7 +149,7 @@ function editionOf(lib: ParsedFilename): Edition {
 /** Maps the library's result field by field. */
 function fromLibrary(lib: ParsedFilename, cleanTitle: string, base: ParsedRelease): ParsedRelease {
   const title = repairTitle(lib.title, cleanTitle);
-  const release: ParsedRelease = { ...base, title, normalizedTitle: normalizeTitle(title) };
+  const release = withTitle(base, title);
   const resolution = RESOLUTIONS.find((r) => `${r}P` === lib.resolution);
   if (lib.year) release.year = Number(lib.year);
   const { episodes, pack } = episodesOf(lib);

@@ -125,13 +125,81 @@ describe('aliasList', () => {
       tmdbTitles: ['Harbour Lights'],
       animeLists: [],
       xemNames: [],
-      sceneMappings: ['Harbour Lights UK', 'Harbour Lights', 'Harbour Lights (UK)', '!!!'],
+      sceneMappings: [{ title: 'Harbour Lights UK' }, { title: 'Harbour Lights' }, { title: 'Harbour Lights (UK)' }, { title: '!!!' }],
     });
     expect(aliases).toEqual([
       { title: 'Harbour Lights', normalized: 'harbour lights', source: 'tmdb' },
       { title: 'Harbour Lights UK', normalized: 'harbour lights uk', source: 'sceneMapping' },
       { title: 'Harbour Lights', normalized: 'harbour lights', source: 'sceneMapping' },
     ]);
+  });
+
+  test('a scene-mapping name keeps its season in its ordering, its release season and its filter; one title per release season and filter', () => {
+    const aliases = aliasList({
+      tmdbTitles: ['Slang Dig I Brunnen'],
+      animeLists: [],
+      xemNames: [],
+      sceneMappings: [
+        { title: 'Slang Dig I Brunnen', partSeason: { season: 1, ordering: 'scene' }, releaseSeason: 10 },
+        { title: 'Slang Dig I Brunnen', partSeason: { season: 2, ordering: 'tmdb' }, releaseSeason: 11 },
+        { title: 'Babylon', filter: '(?i)-(BRAVERY|RiVER)$' },
+        { title: 'Babylon' },
+      ],
+    });
+    expect(aliases).toEqual([
+      { title: 'Slang Dig I Brunnen', normalized: 'slang dig i brunnen', source: 'tmdb' },
+      {
+        title: 'Slang Dig I Brunnen',
+        normalized: 'slang dig i brunnen',
+        source: 'sceneMapping',
+        partSeason: { season: 1, ordering: 'scene' },
+        releaseSeason: 10,
+      },
+      {
+        title: 'Slang Dig I Brunnen',
+        normalized: 'slang dig i brunnen',
+        source: 'sceneMapping',
+        partSeason: { season: 2, ordering: 'tmdb' },
+        releaseSeason: 11,
+      },
+      { title: 'Babylon', normalized: 'babylon', source: 'sceneMapping', filter: '(?i)-(BRAVERY|RiVER)$' },
+      { title: 'Babylon', normalized: 'babylon', source: 'sceneMapping' },
+    ]);
+  });
+
+  test('two scene-mapping names alike in title and release season but placed in different seasons are both left out, never widened to every season', () => {
+    const aliases = aliasList({
+      tmdbTitles: ['Harbour Lights'],
+      animeLists: [],
+      xemNames: [
+        { title: 'Harbour Lights Origins', sceneSeason: 1 },
+        { title: 'Harbour Lights Origins', sceneSeason: 2 },
+      ],
+      sceneMappings: [
+        { title: 'Harbour Lights Next Chapter', partSeason: { season: 1, ordering: 'tmdb' }, releaseSeason: 1 },
+        { title: 'Harbour Lights Next Chapter', partSeason: { season: 2, ordering: 'tmdb' }, releaseSeason: 1 },
+      ],
+    });
+    expect(aliases.map(({ normalized, source, partSeason }) => ({ normalized, source, partSeason }))).toEqual([
+      { normalized: 'harbour lights', source: 'tmdb', partSeason: undefined },
+      { normalized: 'harbour lights origins', source: 'xem', partSeason: undefined },
+    ]);
+  });
+
+  test("a filtered name is never read as another alias with a season's name: it names only some releases", () => {
+    const aliases = aliasList({
+      tmdbTitles: ["JoJo's Bizarre Adventure"],
+      animeLists: [],
+      xemNames: [],
+      sceneMappings: [{ title: "JoJo's Bizarre Adventure Steel Ball Run", filter: '-Group$' }],
+      seasonNames: [{ normalized: 'steel ball run', season: 6, sceneSeason: 6 }],
+    });
+    expect(aliases[1]).toEqual({
+      title: "JoJo's Bizarre Adventure Steel Ball Run",
+      normalized: 'jojos bizarre adventure steel ball run',
+      source: 'sceneMapping',
+      filter: '-Group$',
+    });
   });
 
   test('a title that normalizes to nothing is left out', () => {
@@ -145,11 +213,31 @@ describe('aliasList', () => {
       tmdbTitles: ["JoJo's Bizarre Adventure", "STEEL BALL RUN JoJo's Bizarre Adventure"],
       animeLists: [],
       xemNames: [],
-      seasonNames: [{ normalized: 'steel ball run', sceneSeason: 6 }],
+      seasonNames: [{ normalized: 'steel ball run', season: 6, sceneSeason: 6 }],
     });
     expect(aliases).toEqual([
       { title: "JoJo's Bizarre Adventure", normalized: 'jojos bizarre adventure', source: 'tmdb' },
-      { title: "STEEL BALL RUN JoJo's Bizarre Adventure", normalized: 'steel ball run jojos bizarre adventure', source: 'tmdb', sceneSeason: 6 },
+      {
+        title: "STEEL BALL RUN JoJo's Bizarre Adventure",
+        normalized: 'steel ball run jojos bizarre adventure',
+        source: 'tmdb',
+        partSeason: { season: 6, ordering: 'scene' },
+      },
+    ]);
+  });
+
+  test("an alias made of another and a season's name without a XEM scene season is kept, with no scene season", () => {
+    const aliases = aliasList({
+      tmdbTitles: ["JoJo's Bizarre Adventure", "STEEL BALL RUN JoJo's Bizarre Adventure"],
+      animeLists: [],
+      xemNames: [],
+      sceneMappings: [{ title: "JoJo's Bizarre Adventure Steel Ball Run" }],
+      seasonNames: [{ normalized: 'steel ball run', season: 6 }],
+    });
+    expect(aliases.map(({ normalized, partSeason }) => ({ normalized, sceneSeason: partSeason?.season }))).toEqual([
+      { normalized: 'jojos bizarre adventure', sceneSeason: undefined },
+      { normalized: 'steel ball run jojos bizarre adventure', sceneSeason: undefined },
+      { normalized: 'jojos bizarre adventure steel ball run', sceneSeason: undefined },
     ]);
   });
 
@@ -158,10 +246,10 @@ describe('aliasList', () => {
       tmdbTitles: ["JoJo's Bizarre Adventure"],
       animeLists: [],
       xemNames: [],
-      sceneMappings: ["JoJo's Bizarre Adventure Steel Ball Run", "JoJo's Bizarre Adventure Steel Ball Run Part 2"],
-      seasonNames: [{ normalized: 'steel ball run', sceneSeason: 6 }],
+      sceneMappings: [{ title: "JoJo's Bizarre Adventure Steel Ball Run" }, { title: "JoJo's Bizarre Adventure Steel Ball Run Part 2" }],
+      seasonNames: [{ normalized: 'steel ball run', season: 6, sceneSeason: 6 }],
     });
-    expect(aliases.map(({ normalized, source, sceneSeason }) => ({ normalized, source, sceneSeason }))).toEqual([
+    expect(aliases.map(({ normalized, source, partSeason }) => ({ normalized, source, sceneSeason: partSeason?.season }))).toEqual([
       { normalized: 'jojos bizarre adventure', source: 'tmdb', sceneSeason: undefined },
       { normalized: 'jojos bizarre adventure steel ball run', source: 'sceneMapping', sceneSeason: 6 },
     ]);
@@ -172,9 +260,9 @@ describe('aliasList', () => {
       tmdbTitles: ['Attack on Titan', 'Attack on Titan: The Final Season Part 2'],
       animeLists: [],
       xemNames: [{ title: 'Shingeki no Kyojin: The Final Season Part 2', sceneSeason: 5 }],
-      seasonNames: [{ normalized: 'the final season', sceneSeason: 4 }],
+      seasonNames: [{ normalized: 'the final season', season: 4, sceneSeason: 4 }],
     });
-    expect(aliases.map(({ normalized, sceneSeason }) => ({ normalized, sceneSeason }))).toEqual([
+    expect(aliases.map(({ normalized, partSeason }) => ({ normalized, sceneSeason: partSeason?.season }))).toEqual([
       { normalized: 'attack on titan', sceneSeason: undefined },
       { normalized: 'shingeki no kyojin the final season part 2', sceneSeason: 5 },
     ]);
@@ -182,12 +270,12 @@ describe('aliasList', () => {
 });
 
 describe('seasonNames', () => {
-  const sceneSeasons = new Map([1, 2, 3, 4, 5, 6].map((season) => [season, new Set([season])]));
+  const xemSceneSeasons = new Map([1, 2, 3, 4, 5, 6].map((season) => [season, new Set([season])]));
   const names = (seasons: { season: number; name?: string }[], titles = ["JoJo's Bizarre Adventure"]) =>
-    seasonNames({ seasons, sceneSeasons, titles }).map(({ season, sceneSeason }) => ({ season, sceneSeason }));
+    seasonNames({ seasons, xemSceneSeasons, titles }).map(({ season, sceneSeason }) => ({ season, sceneSeason }));
 
   test("a named season gets its one scene season, from XEM's rows for its Units", () => {
-    expect(seasonNames({ seasons: [{ season: 6, name: 'Steel Ball Run' }], sceneSeasons: new Map([[6, new Set([7])]]), titles: [] })).toEqual([
+    expect(seasonNames({ seasons: [{ season: 6, name: 'Steel Ball Run' }], xemSceneSeasons: new Map([[6, new Set([7])]]), titles: [] })).toEqual([
       { season: 6, name: 'Steel Ball Run', normalized: 'steel ball run', sceneSeason: 7 },
     ]);
   });
@@ -210,16 +298,26 @@ describe('seasonNames', () => {
     expect(names([{ season: 4, name: 'The Final Season' }])).toEqual([{ season: 4, sceneSeason: 4 }]);
   });
 
-  test('a season XEM has no scene rows for, or splits over two scene seasons, gets none', () => {
+  test('a named season XEM has no rows for gets its name without a scene season, beside one XEM maps', () => {
+    expect(seasonNames({ seasons: [{ season: 6, name: 'Steel Ball Run' }], xemSceneSeasons: new Map(), titles: [] })).toEqual([
+      { season: 6, name: 'Steel Ball Run', normalized: 'steel ball run' },
+    ]);
     expect(
       seasonNames({
         seasons: [
           { season: 5, name: 'Stone Ocean' },
           { season: 6, name: 'Steel Ball Run' },
         ],
-        sceneSeasons: new Map([[5, new Set([5, 6])]]),
+        xemSceneSeasons: new Map([[5, new Set([6])]]),
         titles: [],
       }),
-    ).toEqual([]);
+    ).toEqual([
+      { season: 5, name: 'Stone Ocean', normalized: 'stone ocean', sceneSeason: 6 },
+      { season: 6, name: 'Steel Ball Run', normalized: 'steel ball run' },
+    ]);
+  });
+
+  test('a season XEM splits over two scene seasons gets none', () => {
+    expect(seasonNames({ seasons: [{ season: 5, name: 'Stone Ocean' }], xemSceneSeasons: new Map([[5, new Set([5, 6])]]), titles: [] })).toEqual([]);
   });
 });

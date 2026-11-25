@@ -3,6 +3,7 @@
 // its context, records candidates one page per mutation, and finishAttempt
 // picks.
 import {
+  AliasReading,
   CandidateReason,
   CandidateTorrent,
   DownloadProtocol,
@@ -16,6 +17,7 @@ import {
   NumberingScheme,
   IndexerUsageHour,
   ApiLimit,
+  MatchedAlias,
   ParsedEpisode,
   ParsedRelease,
   QualityId,
@@ -24,6 +26,7 @@ import {
   ResolveResult,
   ScoreBreakdown,
   SearchGroupKind,
+  SeasonNameForMatch,
   SearchKeys,
   TargetFormat,
 } from '@omnarr/contracts';
@@ -39,7 +42,7 @@ import { appendEvent } from '../lib/events';
 import { CONVEX_ACTION_LIMIT_MS } from '../lib/limits';
 import { transition } from '../lib/stateMachine';
 import { resolveUnits, searchKeys } from '../metadata/resolve';
-import { workMetadataOf } from '../metadata/write';
+import { readingOfStored, workMetadataOf } from '../metadata/write';
 import { targetOf } from '../playback/target';
 import { keysForWork } from './blocklist';
 import { groupUnits, type GroupUnit, type SearchGroup } from './groups';
@@ -248,9 +251,8 @@ export const WorkForSearch = z.object({
   /** For the anime-only skip. */
   numberingScheme: NumberingScheme,
   year: z.number().optional(),
-  aliases: z.array(z.object({ aliasId: zid('workAliases'), normalized: z.string(), anidbId: z.number().optional(), sceneSeason: z.number().optional() })),
-  /** The named TMDB seasons with their scene seasons, for `<alias> <season name>`. */
-  seasonNames: z.array(z.object({ normalized: z.string(), sceneSeason: z.number() })),
+  aliases: z.array(AliasReading.extend({ aliasId: zid('workAliases'), normalized: z.string() })),
+  seasonNames: z.array(SeasonNameForMatch),
   ids: z.object({ tmdb: z.string(), tvdb: z.string().optional(), imdb: z.string().optional() }),
 });
 
@@ -306,15 +308,8 @@ export async function workForSearch(ctx: QueryCtx, work: Doc<'works'>): Promise<
     kind: work.kind,
     numberingScheme: work.numberingScheme,
     ...(work.year === undefined ? {} : { year: work.year }),
-    aliases: aliases
-      .sort((a, b) => linked(a) - linked(b))
-      .map((a) => ({
-        aliasId: a._id,
-        normalized: a.normalized,
-        ...(a.anidbId === undefined ? {} : { anidbId: a.anidbId }),
-        ...(a.sceneSeason === undefined ? {} : { sceneSeason: a.sceneSeason }),
-      })),
-    seasonNames: (metadata?.seasonNames ?? []).map(({ normalized, sceneSeason }) => ({ normalized, sceneSeason })),
+    aliases: aliases.sort((a, b) => linked(a) - linked(b)).map((alias) => ({ aliasId: alias._id, normalized: alias.normalized, ...readingOfStored(alias) })),
+    seasonNames: (metadata?.seasonNames ?? []).map(({ normalized, season, sceneSeason }) => ({ normalized, season, sceneSeason })),
     ids: { tmdb: id('tmdb') ?? '', ...(id('tvdb') ? { tvdb: id('tvdb') } : {}), ...(id('imdb') ? { imdb: id('imdb') } : {}) },
   };
 }
@@ -394,9 +389,7 @@ export const context = internalQuery({
 export const ResolveItem = z.object({
   episodes: z.array(ParsedEpisode),
   airDate: z.string().optional(),
-  anidbId: z.number().optional(),
-  season: z.number().optional(),
-  sceneSeason: z.number().optional(),
+  alias: MatchedAlias,
 });
 
 /**
@@ -408,8 +401,7 @@ export const resolvePage = internalQuery({
   returns: zodToConvex(z.object({ results: z.array(ResolveResult), runtimes: z.array(z.object({ unitId: zid('units'), runtimeMin: z.number().optional() })) })),
   handler: async (ctx, { workId, items }) => {
     const results = [];
-    for (const item of items)
-      results.push(await resolveUnits(ctx, workId, item.episodes, item.airDate, { anidbId: item.anidbId, season: item.season, sceneSeason: item.sceneSeason }));
+    for (const item of items) results.push(await resolveUnits(ctx, workId, item.episodes, item.airDate, item.alias));
     const runtimes = [];
     for (const unitId of new Set(results.flatMap((result) => result.unitIds))) {
       const meta = await ctx.db

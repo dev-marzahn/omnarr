@@ -4,6 +4,8 @@
 import { XMLParser } from 'fast-xml-parser';
 import { z } from 'zod';
 
+import { sha256 } from '../lib/sha256';
+
 /** A season number, or `'a'` for absolute numbering. */
 const SeasonOrAbsolute = z.union([z.number(), z.literal('a')]);
 
@@ -68,11 +70,6 @@ function mappingOf(raw: RawMapping): AnimeListMapping {
     offset: integer(raw.offset),
     pairs: parseMappingPairs(raw['#text'] ?? ''),
   });
-}
-
-export async function sha256(text: string): Promise<string> {
-  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
-  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
 /** Every `<anime>` entry with an AniDB ID, in file order. */

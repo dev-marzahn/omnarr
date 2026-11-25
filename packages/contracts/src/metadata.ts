@@ -20,12 +20,32 @@ export const AliasSource = z.enum(['tmdb', 'animeLists', 'xem', 'sceneMapping', 
 export type AliasSource = z.infer<typeof AliasSource>;
 
 /** The community mapping sources, each with a `mappingSourceState` row; `sceneMapping` is Sonarr's scene-mapping list. */
-export const MappingSourceName = z.enum(['animeLists', 'xem', 'sceneMapping']);
+export const MappingSourceName = z.enum(['animeLists', 'xem', 'xemNames', 'sceneMapping']);
 export type MappingSourceName = z.infer<typeof MappingSourceName>;
 
 /** The outside sources whose health `metadataSettings.sourceHealth` tracks. */
-export const MetadataSourceName = z.enum(['tmdb', 'xem', 'animeLists', 'sceneMapping']);
+export const MetadataSourceName = z.enum(['tmdb', 'xem', 'xemNames', 'animeLists', 'sceneMapping']);
 export type MetadataSourceName = z.infer<typeof MetadataSourceName>;
+
+export const ShownSourceName = z.enum(['tmdb', 'xem', 'animeLists', 'sceneMapping']);
+export type ShownSourceName = z.infer<typeof ShownSourceName>;
+
+export const JOBS_OF_SOURCE: Record<ShownSourceName, readonly [MetadataSourceName, ...MetadataSourceName[]]> = {
+  tmdb: ['tmdb'],
+  xem: ['xem', 'xemNames'],
+  animeLists: ['animeLists'],
+  sceneMapping: ['sceneMapping'],
+};
+
+export const SOURCE_LABEL: Record<ShownSourceName, string> = {
+  tmdb: 'TMDB',
+  xem: 'TheXEM',
+  animeLists: 'Anime-Lists',
+  sceneMapping: 'Sonarr scene mappings',
+};
+
+export const SourceHealth = z.object({ firstFailureAt: z.number().optional(), lastSuccessAt: z.number().optional() });
+export type SourceHealth = z.infer<typeof SourceHealth>;
 
 /** Why a numbering scheme is suggested: an Anime-Lists entry, TMDB's genre and origin, or neither. */
 export const NumberingReason = z.enum(['animeLists', 'genreOrigin', 'none']);
@@ -42,6 +62,34 @@ export type Confidence = z.infer<typeof Confidence>;
  */
 export const ResolveOrdering = z.enum(['tmdb', 'tvdb', 'scene', 'absolute']);
 export type ResolveOrdering = z.infer<typeof ResolveOrdering>;
+
+export const SeasonName = z.object({ season: z.number(), name: z.string(), normalized: z.string(), sceneSeason: z.number().optional() });
+export type SeasonName = z.infer<typeof SeasonName>;
+
+export const SeasonNameForMatch = SeasonName.omit({ name: true });
+export type SeasonNameForMatch = z.infer<typeof SeasonNameForMatch>;
+
+export const PartSeasonOrdering = z.enum(['scene', 'tmdb']);
+export type PartSeasonOrdering = z.infer<typeof PartSeasonOrdering>;
+
+export const PartSeason = z.object({ season: z.number(), ordering: PartSeasonOrdering });
+export type PartSeason = z.infer<typeof PartSeason>;
+
+export const AliasReading = z.object({
+  anidbId: z.number().optional(),
+  partSeason: PartSeason.optional(),
+  releaseSeason: z.number().optional(),
+  filter: z.string().optional(),
+});
+export type AliasReading = z.infer<typeof AliasReading>;
+
+export const MatchedAlias = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('plain') }),
+  z.object({ kind: z.literal('anidb'), anidbId: z.number() }),
+  z.object({ kind: z.literal('namedSeason'), season: z.number() }),
+  PartSeason.extend({ kind: z.literal('partSeason'), releaseSeason: z.number() }),
+]);
+export type MatchedAlias = z.infer<typeof MatchedAlias>;
 
 export const ResolveProblem = z.enum(['ambiguous', 'notFound', 'schemeMismatch']);
 export type ResolveProblem = z.infer<typeof ResolveProblem>;

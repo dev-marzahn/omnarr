@@ -1,13 +1,13 @@
 // The matching functions: findWorksByTitle, resolveUnits and searchKeys,
 // against Works written by the real subscribe path with TMDB, XEM and
 // Anime-Lists behind fakes.
-import type { IndexerItem, ResolveOrdering } from '@omnarr/contracts';
+import type { IndexerItem, MatchedAlias, ResolveOrdering } from '@omnarr/contracts';
 import { attackOnTitan as attackOnTitanSeries, emberRite as emberRiteSeries, jojoParts, SERIES } from '@omnarr/e2e/fakes/tmdb/fixtures';
-import { parseRelease } from '@omnarr/parser';
+import { compactTitle, normalizeTitle, parseRelease } from '@omnarr/parser';
 import { matchTitle } from '@omnarr/scoring';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vite-plus/test';
 
-import { api } from '../../convex/_generated/api';
+import { api, internal } from '../../convex/_generated/api';
 import type { Id } from '../../convex/_generated/dataModel';
 import { findWorksByTitle, resolveUnits, searchKeys } from '../../convex/metadata/resolve';
 import { workForSearch } from '../../convex/pipeline/search';
@@ -16,7 +16,7 @@ import blackLagoonShape from '../fixtures/xem/blackLagoonShape.json';
 import jojoPartsNames from '../fixtures/xem/jojoPartsNames.json';
 import jojoPartsShape from '../fixtures/xem/jojoPartsShape.json';
 import missingSeasonShape from '../fixtures/xem/missingSeasonShape.json';
-import { asAdmin, seedAnimeLists, seedLibraries, seedXemList, setup, useMetadataFakes, type Backend, type Libraries } from '../setup';
+import { asAdmin, fetchXem, seedAnimeLists, seedLibraries, seedXemList, setup, useMetadataFakes, type Backend, type Libraries } from '../setup';
 
 let t: Backend;
 let admin: Awaited<ReturnType<typeof asAdmin>>;
@@ -54,8 +54,8 @@ const label = (unitId: Id<'units'>) =>
 async function resolveTitle(workId: Id<'works'>, title: string) {
   const parsed = parseRelease(title, 'series');
   return t.run(async (ctx) => {
-    const alias = (await findWorksByTitle(ctx, parsed.normalizedTitle)).find((match) => match.workId === workId);
-    return resolveUnits(ctx, workId, parsed.episodes, parsed.airDate, alias);
+    const anidbId = (await findWorksByTitle(ctx, parsed.normalizedTitle, 'releaseTitle')).find((match) => match.workId === workId)?.anidbId;
+    return resolveUnits(ctx, workId, parsed.episodes, parsed.airDate, anidbId === undefined ? { kind: 'plain' } : { kind: 'anidb', anidbId });
   });
 }
 
@@ -110,8 +110,12 @@ const unitAt = (workId: Id<'works'>, season: number, episode: number) =>
         .unique())!,
   );
 
-const resolve = (workId: Id<'works'>, episodes: { season?: number; episode?: number; absolute?: number }[], airDate?: string, alias?: { anidbId?: number }) =>
-  t.run((ctx) => resolveUnits(ctx, workId, episodes, airDate, alias));
+const resolve = (
+  workId: Id<'works'>,
+  episodes: { season?: number; episode?: number; absolute?: number }[],
+  airDate?: string,
+  alias: MatchedAlias = { kind: 'plain' },
+) => t.run((ctx) => resolveUnits(ctx, workId, episodes, airDate, alias));
 
 describe('resolveUnits rules', () => {
   test('rule 1: an air date names the Unit on that calendar day (mapped)', async () => {
@@ -138,7 +142,7 @@ describe('resolveUnits rules', () => {
   test('rule 2 falls through when the AniDB ordering lacks the number', async () => {
     await seedAnimeLists(t);
     const workId = await subscribe('900002', [1, 2]);
-    const result = await resolve(workId, [{ absolute: 14 }], undefined, { anidbId: 17002 });
+    const result = await resolve(workId, [{ absolute: 14 }], undefined, { kind: 'anidb', anidbId: 17002 });
     expect(result).toMatchObject({ via: { ordering: 'absolute' } });
     expect(await Promise.all(result.unitIds.map(label))).toEqual(['S2E2']);
   });
@@ -226,7 +230,7 @@ describe('resolveUnits rules', () => {
 
 describe("resolveUnits' orderings argument (the scan's ordering trial)", () => {
   const resolveIn = (workId: Id<'works'>, episodes: { season?: number; episode?: number; absolute?: number }[], orderings: ResolveOrdering[]) =>
-    t.run((ctx) => resolveUnits(ctx, workId, episodes, undefined, undefined, { orderings }));
+    t.run((ctx) => resolveUnits(ctx, workId, episodes, undefined, { kind: 'plain' }, { orderings }));
 
   test('tmdb alone reads TMDB numbers and skips the scene and tvdb rows', async () => {
     const workId = await northbound();
@@ -264,7 +268,7 @@ describe("resolveUnits' orderings argument (the scan's ordering trial)", () => {
 
   test('without the argument the rules are unchanged', async () => {
     const workId = await northbound();
-    expect((await t.run((ctx) => resolveUnits(ctx, workId, [{ season: 1, episode: 13 }], undefined, undefined, {}))).via.ordering).toBe('tvdb');
+    expect((await t.run((ctx) => resolveUnits(ctx, workId, [{ season: 1, episode: 13 }], undefined, { kind: 'plain' }, {}))).via.ordering).toBe('tvdb');
   });
 });
 
@@ -296,7 +300,7 @@ async function matchAndResolve(workId: Id<'works'>, title: string, options: { id
     const item = indexerItem(title, work.ids.tvdb!);
     const matched = matchTitle(parsed, options.ids === false ? { ...item, ids: {} } : item, work);
     if (!matched.ok) return matched;
-    const resolved = await resolveUnits(ctx, workId, parsed.episodes, parsed.airDate, matched);
+    const resolved = await resolveUnits(ctx, workId, parsed.episodes, parsed.airDate, matched.alias);
     return {
       ...resolved,
       labels: await Promise.all(resolved.unitIds.map(async (id) => `S${(await ctx.db.get(id))!.tmdbSeason}E${(await ctx.db.get(id))!.tmdbEpisode}`)),
@@ -386,6 +390,7 @@ describe('a season-numbered anime release on a Work TMDB merged into one season'
 async function jojo() {
   await seedXemList(t, [7700009]);
   useMetadataFakes({ series: [...SERIES, jojoParts()], xem: { shows: { 7700009: { all: jojoPartsShape, names: jojoPartsNames } } } });
+  await fetchXem(t);
   return (
     await admin.action(api.api.library.subscribe, {
       tmdbId: '900009',
@@ -399,6 +404,27 @@ async function jojo() {
 }
 
 describe('a part named by its XEM season name', () => {
+  test("an alias row stored before XEM's names came from allNames still reads its number in its scene season, and syncs keep it until allNames first succeeds", async () => {
+    await seedXemList(t, [7700009]);
+    useMetadataFakes({ series: [...SERIES, jojoParts()], xem: { shows: { 7700009: { all: jojoPartsShape } } } });
+    const { workId } = await admin.action(api.api.library.subscribe, {
+      tmdbId: '900009',
+      kind: 'series',
+      libraryId: libraries.series,
+      releaseProfileId: libraries.releaseProfileId,
+      seasons: [5, 6],
+      numberingScheme: 'anime',
+    });
+    const title = "JoJo's Bizarre Adventure - Stone Ocean";
+    const normalized = normalizeTitle(title);
+    await t.run((ctx) => ctx.db.insert('workAliases', { workId, title, normalized, compact: compactTitle(normalized), source: 'xem', sceneSeason: 5 }));
+    await t.action(internal.metadata.sync.syncWork, { workId });
+    expect(await matchAndResolve(workId, '[SubsPlease] JoJos Bizarre Adventure - Stone Ocean - 01 (1080p)')).toMatchObject({
+      labels: ['S5E1'],
+      via: { ordering: 'scene', source: 'xem' },
+    });
+  });
+
   test.each([
     ['[SubsPlease] JoJos Bizarre Adventure - Stone Ocean - 01 (1080p)', 'S5E1'],
     ['[Erai-raws] JoJo no Kimyou na Bouken-Steel Ball Run-01', 'S6E1'],
@@ -467,6 +493,156 @@ describe('a part named by its XEM season name', () => {
     });
   });
 
+  describe("a season's name without XEM rows reads the season's TMDB numbers", () => {
+    async function jojoWithoutXem(options: { numberingScheme?: 'anime' | 'standard' } = {}) {
+      useMetadataFakes({ series: [...SERIES, jojoParts()] });
+      return (
+        await admin.action(api.api.library.subscribe, {
+          tmdbId: '900009',
+          kind: 'series',
+          libraryId: libraries.series,
+          releaseProfileId: libraries.releaseProfileId,
+          seasons: [5, 6],
+          numberingScheme: options.numberingScheme ?? 'anime',
+        })
+      ).workId;
+    }
+    const steelBallRun = { kind: 'partSeason', season: 6, ordering: 'tmdb', releaseSeason: 1 } as const;
+
+    test.each([
+      ["[Anku & mutagenb] JoJo's Bizarre Adventure Steel Ball Run - 03 [1080p rus].mkv", 'S6E3'],
+      ["[Group] JoJo's Bizarre Adventure - Stone Ocean - 05 [1080p]", 'S5E5'],
+      ["[Group] JoJo's Bizarre Adventure Steel Ball Run S01E03 [1080p]", 'S6E3'],
+      ["[Group] STEEL BALL RUN JoJo's Bizarre Adventure - 03 [1080p]", 'S6E3'],
+    ])("%s is %s, read within the named season, not season 1's", async (title, label) => {
+      const workId = await jojoWithoutXem();
+      const result = await matchAndResolve(workId, title, { ids: false });
+      expect(result).toMatchObject({ labels: [label], via: { ordering: 'tmdb', source: 'tmdb' } });
+      expect(result).not.toHaveProperty('problem');
+    });
+
+    test("a scene-mapping name and TMDB's title of the show and a season's name are stored, and their - 03 is still S6E3, not S1E3", async () => {
+      await t.run((ctx) =>
+        ctx.db.insert('sceneMappings', { mappingId: 's-sbr', tvdbId: 7700009, title: "JoJo's Bizarre Adventure Steel Ball Run", seenVersion: 'fixture-v1' }),
+      );
+      const workId = await jojoWithoutXem();
+      const aliases = await t.run((ctx) =>
+        ctx.db
+          .query('workAliases')
+          .withIndex('by_work', (q) => q.eq('workId', workId))
+          .collect(),
+      );
+      expect(aliases.map((alias) => alias.normalized)).toEqual(
+        expect.arrayContaining(['jojos bizarre adventure steel ball run', 'steel ball run jojos bizarre adventure']),
+      );
+      for (const title of ["[Group] JoJo's Bizarre Adventure Steel Ball Run - 03 [1080p]", "[Group] STEEL BALL RUN JoJo's Bizarre Adventure - 03 [1080p]"])
+        expect(await matchAndResolve(workId, title, { ids: false })).toMatchObject({ labels: ['S6E3'], via: { ordering: 'tmdb', source: 'tmdb' } });
+    });
+
+    test("a manual alias of the show and a season's name reads that season too: - 03 is S6E3", async () => {
+      const workId = await jojoWithoutXem();
+      await admin.mutation(api.api.metadata.addAlias, { workId, title: "JoJo's Bizarre Adventure Steel Ball Run" });
+      expect(await matchAndResolve(workId, "[Group] JoJo's Bizarre Adventure Steel Ball Run - 03 [1080p]", { ids: false })).toMatchObject({
+        labels: ['S6E3'],
+        via: { ordering: 'tmdb', source: 'tmdb' },
+      });
+    });
+
+    test("SxxEyy naming another season than the name's is ambiguous: Stone Ocean S06E03", async () => {
+      const workId = await jojoWithoutXem();
+      expect(await matchAndResolve(workId, "[Group] JoJo's Bizarre Adventure Stone Ocean S06E03 [1080p]", { ids: false })).toMatchObject({
+        labels: [],
+        problem: 'ambiguous',
+      });
+    });
+
+    test('an absolute number beside SxxEyy that names another Unit is ambiguous', async () => {
+      const workId = await jojoWithoutXem();
+      expect(await resolve(workId, [{ season: 6, episode: 3, absolute: 1 }], undefined, steelBallRun)).toMatchObject({ unitIds: [], problem: 'ambiguous' });
+    });
+
+    test('a number read as an episode and as an absolute number on different Units of the season is ambiguous', async () => {
+      const workId = await jojoWithoutXem();
+      const s6e1 = await unitAt(workId, 6, 1);
+      await t.run((ctx) => ctx.db.insert('unitMappings', { unitId: s6e1._id, workId, ordering: 'absolute', absolute: 2, source: 'manual' }));
+      expect(await resolve(workId, [{ absolute: 2 }], undefined, steelBallRun)).toMatchObject({ unitIds: [], problem: 'ambiguous' });
+    });
+
+    test('an absolute number after the name of a show not on anime numbering is schemeMismatch', async () => {
+      const workId = await jojoWithoutXem({ numberingScheme: 'standard' });
+      expect(await matchAndResolve(workId, "[Group] JoJo's Bizarre Adventure Steel Ball Run - 03 [1080p]", { ids: false })).toMatchObject({
+        labels: [],
+        problem: 'schemeMismatch',
+      });
+    });
+
+    test('a release with no numbers after the name of a show not on anime numbering is notFound, not schemeMismatch', async () => {
+      const workId = await jojoWithoutXem({ numberingScheme: 'standard' });
+      expect(await resolve(workId, [], undefined, steelBallRun)).toMatchObject({ unitIds: [], problem: 'notFound' });
+    });
+
+    test("a number the season doesn't have is notFound, not the Unit with that TMDB absolute number", async () => {
+      const workId = await jojoWithoutXem();
+      expect(await matchAndResolve(workId, "[Group] JoJo's Bizarre Adventure Steel Ball Run - 05 [1080p]", { ids: false })).toMatchObject({
+        labels: [],
+        problem: 'notFound',
+      });
+    });
+
+    test('an absolute number that lands in the named season is its Unit: Stone Ocean - 18 is S5E1', async () => {
+      const workId = await jojoWithoutXem();
+      expect(await matchAndResolve(workId, "[Group] JoJo's Bizarre Adventure - Stone Ocean - 18 [1080p]", { ids: false })).toMatchObject({
+        labels: ['S5E1'],
+        via: { ordering: 'absolute', source: 'tmdb' },
+      });
+    });
+
+    test.each([["[Group] JoJo's Bizarre Adventure Steel Ball Run - 03 [1080p]"], ["[Group] JoJo's Bizarre Adventure Steel Ball Run S01E03 [1080p]"]])(
+      "a tvdb row that puts another season's Unit at the name's season is not read: %s is S6E3, not S1E3",
+      async (title) => {
+        await seedAnimeLists(
+          t,
+          'fixture-v1',
+          `<anime-list>
+  <anime anidbid="9901" tvdbid="7700009" defaulttvdbseason="6" episodeoffset="" tmdbtv="900009" tmdbseason="1" tmdboffset="" tmdbid="" imdbid="">
+    <name>Phantom Blood</name>
+  </anime>
+</anime-list>`,
+        );
+        const workId = await jojoWithoutXem();
+        const tvdbRow = await t.run(async (ctx) =>
+          ctx.db
+            .query('unitMappings')
+            .withIndex('by_ordering', (q) => q.eq('workId', workId).eq('ordering', 'tvdb').eq('season', 6).eq('episode', 3))
+            .first(),
+        );
+        expect(tvdbRow).toMatchObject({ unitId: (await unitAt(workId, 1, 3))._id });
+        expect(await matchAndResolve(workId, title, { ids: false })).toMatchObject({
+          labels: ['S6E3'],
+          via: { ordering: 'tmdb', source: 'tmdb' },
+        });
+      },
+    );
+  });
+
+  test('a XEM name with a scene season XEM has no rows for is read in scene rows only, never as that TMDB season: notFound', async () => {
+    await seedXemList(t, [7700009]);
+    useMetadataFakes({
+      series: [...SERIES, jojoParts()],
+      xem: { shows: { 7700009: { all: { result: 'success', data: [] }, names: [{ 'JoJo Kimyou Part Six': 6 }] } } },
+    });
+    await fetchXem(t);
+    const { workId } = await admin.action(api.api.library.subscribe, {
+      tmdbId: '900009',
+      kind: 'series',
+      libraryId: libraries.series,
+      releaseProfileId: libraries.releaseProfileId,
+      seasons: [6],
+      numberingScheme: 'anime',
+    });
+    expect(await matchAndResolve(workId, '[Group] JoJo Kimyou Part Six - 02 [1080p]', { ids: false })).toMatchObject({ labels: [], problem: 'notFound' });
+  });
+
   test('the general alias with a number every part restarts at is ambiguous, not S1E1', async () => {
     const workId = await jojo();
     for (const title of ['[SubsPlease] JoJos Bizarre Adventure - 01 (1080p)', '[Erai-raws] JoJo no Kimyou na Bouken - 01 [1080p]'])
@@ -491,16 +667,13 @@ async function attackOnTitan(xem: 'whole' | 'split') {
       return { scene, tvdb: { season: s.season_number, episode: e.episode_number, absolute } };
     }),
   );
-  const names = {
-    result: 'success',
-    data: {
-      all: { ja: ['Shingeki no Kyojin'] },
-      ...(xem === 'split' ? { 4: { ja: ['Shingeki no Kyojin: The Final Season'] }, 5: { ja: ['Shingeki no Kyojin: The Final Season Part 2'] } } : {}),
-    },
-    message: '',
-  };
+  const names = [
+    { 'Shingeki no Kyojin': -1 },
+    ...(xem === 'split' ? [{ 'Shingeki no Kyojin: The Final Season': 4 }, { 'Shingeki no Kyojin: The Final Season Part 2': 5 }] : []),
+  ];
   await seedXemList(t, [7700010]);
   useMetadataFakes({ series: [...SERIES, series], xem: { shows: { 7700010: { all: { result: 'success', data, message: '' }, names } } } });
+  await fetchXem(t);
   return (
     await admin.action(api.api.library.subscribe, {
       tmdbId: '900010',
@@ -512,6 +685,62 @@ async function attackOnTitan(xem: 'whole' | 'split') {
     })
   ).workId;
 }
+
+describe("Sonarr's scene-mapping names for one season or some releases", () => {
+  const harbourWithSceneNames = async () => {
+    await t.run(async (ctx) => {
+      const insert = (mappingId: string, fields: { title: string; tvdbSeason?: number; releaseSeason?: number; filter?: string }) =>
+        ctx.db.insert('sceneMappings', { mappingId, tvdbId: 7700001, seenVersion: 'v1', ...fields });
+      await insert('s-next', { title: 'Harbour Lights Next Chapter', tvdbSeason: 2, releaseSeason: 1 });
+      await insert('s-filtered', { title: 'Harbour', filter: '(?i)^Harbour\\.S01E' });
+      await insert('s-specials', { title: 'Harbour Lights Winter Tales', tvdbSeason: 2 });
+    });
+    return subscribe('900001', [1, 2]);
+  };
+
+  test("a name with only a TVDB season expects its releases to write that season: S02E02 reads S2E2, and S01E02 is no title of the Work's", async () => {
+    const workId = await harbourWithSceneNames();
+    expect(await matchAndResolve(workId, 'Harbour.Lights.Winter.Tales.S02E02.1080p.WEB.h264-GRP')).toMatchObject({ labels: ['S2E2'] });
+    expect(await matchAndResolve(workId, 'Harbour.Lights.Winter.Tales.S01E02.1080p.WEB.h264-GRP', { ids: false })).toEqual({ ok: false, detail: 'title' });
+  });
+
+  test('search titles leave out a filtered name and one whose releases write another season than its own', async () => {
+    const workId = await harbourWithSceneNames();
+    const unit = await unitAt(workId, 2, 3);
+    const keys = await t.run((ctx) => searchKeys(ctx, workId, [unit._id]));
+    expect(keys.searchTitles).toContain('Harbour Lights Winter Tales');
+    expect(keys.searchTitles).not.toContain('Harbour Lights Next Chapter');
+    expect(keys.searchTitles).not.toContain('Harbour');
+  });
+
+  test('a name for TVDB season 2 whose releases write S01 reads S01E03 as S2E3', async () => {
+    const workId = await harbourWithSceneNames();
+    expect(await matchAndResolve(workId, 'Harbour.Lights.Next.Chapter.S01E03.1080p.WEB.h264-GRP')).toMatchObject({ labels: ['S2E3'] });
+  });
+
+  test('the same name on a release of another season matches no title, so it is never read as that season', async () => {
+    const workId = await harbourWithSceneNames();
+    expect(await matchAndResolve(workId, 'Harbour.Lights.Next.Chapter.S03E03.1080p.WEB.h264-GRP', { ids: false })).toEqual({ ok: false, detail: 'title' });
+  });
+
+  test("a part whose releases write season 4 reads S04E03 in the part (Food Safari's S04 is TVDB's S06); another season is ambiguous", async () => {
+    const workId = await harbourWithSceneNames();
+    const part = { kind: 'partSeason', season: 2, ordering: 'tmdb', releaseSeason: 4 } as const;
+    expect(await resolve(workId, [{ season: 4, episode: 3 }], undefined, part)).toMatchObject({ unitIds: [(await unitAt(workId, 2, 3))._id] });
+    expect(await resolve(workId, [{ season: 3, episode: 3 }], undefined, part)).toMatchObject({ unitIds: [], problem: 'ambiguous' });
+  });
+
+  test('the show under its own name still reads its own seasons', async () => {
+    const workId = await harbourWithSceneNames();
+    expect(await matchAndResolve(workId, 'Harbour.Lights.S01E03.1080p.WEB.h264-GRP')).toMatchObject({ labels: ['S1E3'] });
+  });
+
+  test('a filtered name matches only the titles its pattern matches', async () => {
+    const workId = await harbourWithSceneNames();
+    expect(await matchAndResolve(workId, 'Harbour.S01E02.720p.HDTV.x264-GRP')).toMatchObject({ labels: ['S1E2'] });
+    expect(await matchAndResolve(workId, 'Harbour.S02E02.720p.HDTV.x264-GRP', { ids: false })).toEqual({ ok: false, detail: 'title' });
+  });
+});
 
 describe('a cour after a season name is never dropped (Attack on Titan, the part-title fix)', () => {
   const rejected = { ok: false, detail: 'title' };
@@ -621,11 +850,25 @@ describe('findWorksByTitle', () => {
   test('lists every Work with the alias, and per Work the alias without an AniDB link first', async () => {
     await seedAnimeLists(t);
     const workId = await subscribe('900002', [1, 2]);
-    const matches = await t.run((ctx) => findWorksByTitle(ctx, 'star lantern'));
+    const matches = await t.run((ctx) => findWorksByTitle(ctx, 'star lantern', 'releaseTitle'));
     expect(matches.map((m) => [m.workId, m.anidbId])).toEqual([
       [workId, undefined],
       [workId, 17001],
     ]);
-    expect(await t.run((ctx) => findWorksByTitle(ctx, 'no such show'))).toEqual([]);
+    expect(await t.run((ctx) => findWorksByTitle(ctx, 'no such show', 'releaseTitle'))).toEqual([]);
+  });
+
+  test('a folder name never finds a Work through a name for some releases only; a release title does, and matchTitle checks it', async () => {
+    const workId = await subscribe('900002', [1]);
+    await t.run(async (ctx) => {
+      const insert = (normalized: string, fields: { releaseSeason?: number; filter?: string; sceneSeason?: number }) =>
+        ctx.db.insert('workAliases', { workId, title: normalized, normalized, compact: normalized.replaceAll(' ', ''), source: 'sceneMapping', ...fields });
+      await insert('dexter', { sceneSeason: 1, releaseSeason: 9 });
+      await insert('babylon', { filter: '-RiVER$' });
+    });
+    for (const title of ['dexter', 'babylon']) {
+      expect(await t.run((ctx) => findWorksByTitle(ctx, title, 'folderName'))).toEqual([]);
+      expect((await t.run((ctx) => findWorksByTitle(ctx, title, 'releaseTitle'))).map((m) => m.workId)).toEqual([workId]);
+    }
   });
 });

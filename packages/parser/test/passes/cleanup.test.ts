@@ -53,6 +53,50 @@ describe('cleanup (pass 1)', () => {
     expect(cleanup('[Fansub] Lantern Keeper - 07 [1080p]').cleanTitle).toBe('[Fansub] Lantern Keeper - 07 [1080p]');
   });
 
+  test.each([
+    ['[Fansub] Lantern Keeper S2-05v2 [1080p]', '[Fansub] Lantern Keeper S02E05.v2 [1080p]'],
+    ['Lantern Keeper S2-01v2', 'Lantern Keeper S02E01.v2'],
+    ['Lantern.Keeper.S12-03.1080p', 'Lantern.Keeper.S12E03.1080p'],
+    ['Lantern Keeper S2-02', 'Lantern Keeper S02E02'],
+    ['Lantern Keeper S2-05', 'Lantern Keeper S2-05'],
+    ['Lantern Keeper S1-10 Complete', 'Lantern Keeper S1-10 Complete'],
+    ['Lantern Keeper S2-1080p', 'Lantern Keeper S2-1080p'],
+    ['Lantern Keeper S01-03', 'Lantern Keeper S01-03'],
+    ['Lantern Keeper S01E05 S2-01', 'Lantern Keeper S01E05 S2-01'],
+    ['[Grp] Lantern Keeper S2-01-12', '[Grp] Lantern Keeper S02E01E12'],
+    ['Lantern Keeper S2-01-12v2 [1080p]', 'Lantern Keeper S02E01E12.v2 [1080p]'],
+    ['Lantern Keeper S2-12-01', 'Lantern Keeper S2-12-01'],
+    ['Lantern Keeper S2-01-1080p', 'Lantern Keeper S02E01 1080p'],
+    ['Lantern.Keeper.S2-01E05-GRP', 'Lantern.Keeper.S02E05-GRP'],
+    ['Lantern Keeper S2-01E05-1080p', 'Lantern Keeper S02E05 1080p'],
+    ['Lantern Keeper S2-01E05E06E07', 'Lantern Keeper S02E05E07'],
+    ['Lantern Keeper S2-01E05-E06-E07', 'Lantern Keeper S02E05E07'],
+    ['Lantern Keeper S2-01E07E05', 'Lantern Keeper S2-01E07E05'],
+    ['[Grp] Lantern Keeper S2-01v2-12', '[Grp] Lantern Keeper S02E01E12.v2'],
+    ['[Grp] Lantern Keeper S2-01v10', '[Grp] Lantern Keeper S02E01.v10'],
+    ['Lantern Keeper S2-01E05', 'Lantern Keeper S02E05'],
+    ['[Grp] Lantern Keeper S2-01E05 [1080p]', '[Grp] Lantern Keeper S02E05 [1080p]'],
+    ['Lantern Keeper S2-01-012', 'Lantern Keeper S02E01E12'],
+    ['Lantern Keeper S2-001-012', 'Lantern Keeper S02E01E12'],
+    ['[Grp] Lantern Keeper S2-01-01', '[Grp] Lantern Keeper S02E01'],
+    ['Lantern Keeper S2-01v1000', 'Lantern Keeper S02E01.v1000'],
+    ['Lantern Keeper S2-01E05v2', 'Lantern Keeper S02E05.v2'],
+    ['Lantern Keeper S2-01E05-06', 'Lantern Keeper S02E05E06'],
+    ['Lantern Keeper S2-01E05E06', 'Lantern Keeper S02E05E06'],
+    ['Lantern Keeper S01E05 S2-01E06', 'Lantern Keeper S01E05 S2-01E06'],
+    ['Lantern Keeper S2-01v2rip', 'Lantern Keeper S02E01v2rip'],
+    ['Lantern.Keeper.S2-01E05-EVO', 'Lantern.Keeper.S02E05-EVO'],
+    ['Lantern Keeper S2-01E05E06-GRP', 'Lantern Keeper S02E05E06-GRP'],
+    ['Lantern Keeper S2-01E05E6', 'Lantern Keeper S02E05E06'],
+    ['Lantern Keeper S2-01E05-6', 'Lantern Keeper S02E05E06'],
+    ['Lantern Keeper S2-01-2019', 'Lantern Keeper S02E01 2019'],
+    ['Lantern Keeper S2-01-480', 'Lantern Keeper S02E01 480'],
+    ['[1080p] Lantern Keeper S1-10', '[1080p] Lantern Keeper S1-10'],
+    ['[WEB 1080p] Lantern Keeper S1-10', '[WEB 1080p] Lantern Keeper S1-10'],
+  ])('writes a season-numbered episode %s as SxxEyy only where a season range cannot be meant', (raw, cleanTitle) => {
+    expect(cleanup(raw).cleanTitle).toBe(cleanTitle);
+  });
+
   test('trims whitespace', () => {
     expect(cleanup(`  ${BASE}  `).cleanTitle).toBe(BASE);
   });

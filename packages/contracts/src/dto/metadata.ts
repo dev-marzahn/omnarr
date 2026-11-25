@@ -4,7 +4,7 @@ import { zid } from 'convex-helpers/server/zod4';
 import { z } from 'zod';
 
 import { MappingSource, Ordering } from '../library.ts';
-import { AliasSource, BuildState, MappingStatus, MetadataSourceName, NumberingReason } from '../metadata.ts';
+import { AliasSource, BuildState, MappingStatus, NumberingReason, ShownSourceName, SourceHealth } from '../metadata.ts';
 import { NumberingScheme, WorkKind } from './library.ts';
 
 export const MetadataSearchRequest = z.object({
@@ -54,9 +54,7 @@ export const MetadataSettingsRow = z.object({
   tokenSource: z.enum(['user', 'deployment']),
   userTokenCheckedAt: z.number().optional(),
   language: z.string(),
-  sources: z.array(
-    z.object({ name: MetadataSourceName, version: z.string().optional(), lastSuccessAt: z.number().optional(), firstFailureAt: z.number().optional() }),
-  ),
+  sources: z.array(SourceHealth.extend({ name: ShownSourceName, version: z.string().optional() })),
 });
 export type MetadataSettingsRow = z.infer<typeof MetadataSettingsRow>;
 

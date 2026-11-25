@@ -5,7 +5,9 @@ import { v } from 'convex/values';
 
 import { internal } from '../_generated/api';
 import { internalAction } from '../_generated/server';
-import { parseAnimeList, sha256 } from './animeListsParse';
+import { fetchCappedTextIfChanged } from '../lib/fetchCappedText';
+import { parseAnimeList } from './animeListsParse';
+import { storeList } from './listStore';
 
 export const ANIME_LISTS_URL = 'https://raw.githubusercontent.com/Anime-Lists/anime-lists/master/anime-list.xml';
 
@@ -26,34 +28,20 @@ export const fetchAnimeLists = internalAction({
   handler: async (ctx): Promise<null> => {
     const state = await ctx.runQuery(internal.mapping.sources.sourceState, { source: 'animeLists' });
     try {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
-      let body: string | null;
-      let etag: string | undefined;
-      try {
-        const response = await fetch(ANIME_LISTS_URL, { headers: state.etag ? { 'if-none-match': state.etag } : {}, signal: controller.signal });
-        if (response.status !== 304 && !response.ok) throw new Error(`Anime-Lists answered ${response.status}.`);
-        body = response.status === 304 ? null : await response.text();
-        etag = response.headers.get('etag') ?? undefined;
-      } finally {
-        clearTimeout(timer);
-      }
-
-      const version = body === null ? undefined : await sha256(body);
-      if (body === null || version === state.version) {
-        await ctx.runMutation(internal.mapping.sources.recordSourceFetch, { source: 'animeLists', etag });
+      const fetched = await fetchCappedTextIfChanged(ANIME_LISTS_URL, state.etag, { label: 'Anime-Lists', timeoutMs: TIMEOUT_MS });
+      if (fetched.notModified) {
+        await ctx.runMutation(internal.mapping.sources.recordSourceFetch, { source: 'animeLists' });
         return null;
       }
-      const entries = await parseAnimeList(body);
-      const changed: number[] = [];
-      for (let i = 0; i < entries.length; i += BATCH)
-        changed.push(...(await ctx.runMutation(internal.mapping.sources.writeAnimeListEntries, { version: version!, batch: entries.slice(i, i + BATCH) })));
-      for (;;) {
-        const page = await ctx.runMutation(internal.mapping.sources.deleteStaleEntries, { version: version! });
-        changed.push(...page.tmdbTvIds);
-        if (page.done) break;
-      }
-      await ctx.runMutation(internal.mapping.sources.recordSourceFetch, { source: 'animeLists', version, etag, changedTmdbTvIds: changed });
+      const { etag } = fetched;
+      await storeList(fetched.body, state.version, {
+        parse: parseAnimeList,
+        batchSize: BATCH,
+        writeBatch: (version, batch) => ctx.runMutation(internal.mapping.sources.writeAnimeListEntries, { version, batch }),
+        deleteStalePage: (version) => ctx.runMutation(internal.mapping.sources.deleteStaleEntries, { version }),
+        recordFetch: (version) => ctx.runMutation(internal.mapping.sources.recordSourceFetch, { source: 'animeLists', version, etag }),
+        resync: (tmdbTvIds) => ctx.runMutation(internal.mapping.sources.resyncChangedWorks, { tmdbTvIds }),
+      });
       return null;
     } catch (error) {
       await ctx.runMutation(internal.mapping.sources.recordSourceFailure, { source: 'animeLists' });

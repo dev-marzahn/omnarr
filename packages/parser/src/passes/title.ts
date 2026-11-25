@@ -3,11 +3,13 @@
 import type { ParsedRelease } from '@omnarr/contracts';
 
 import { normalizeTitle } from '../normalize.ts';
+import { YEAR } from './tokens.ts';
 
-const YEAR = /^(19|20)\d\d$/;
 const COUNTRY = /^[A-Z]{2}$/;
 
-const withTitle = (partial: ParsedRelease, title: string): ParsedRelease => ({ ...partial, title, normalizedTitle: normalizeTitle(title) });
+export function withTitle(partial: ParsedRelease, title: string): ParsedRelease {
+  return { ...partial, title, normalizedTitle: normalizeTitle(title) };
+}
 
 /**
  * A series title that ends in a year splits the year out

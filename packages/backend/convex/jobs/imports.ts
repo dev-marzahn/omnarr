@@ -3,7 +3,7 @@
 // to the Grab's Units, so a scene- or absolute-numbered file lands on the TMDB
 // Unit the release was picked for, through the same resolveUnits
 // that search and RSS used.
-import { ResolveFilesRequest, ResolveFilesResponse, type IndexerItem, type ParsedRelease, type ResolvedFile } from '@omnarr/contracts';
+import { ResolveFilesRequest, ResolveFilesResponse, type IndexerItem, type MatchedAlias, type ParsedRelease, type ResolvedFile } from '@omnarr/contracts';
 import { parseRelease } from '@omnarr/parser';
 import { matchTitle, type WorkForMatch } from '@omnarr/scoring';
 
@@ -67,7 +67,7 @@ export const resolveFiles = workerQuery({
 
     // The alias the release was picked through, as search and RSS pass it; none when the title no longer matches.
     const match = matchTitle(parseRelease(candidate.title, work.kind), indexerItemOf(candidate), (await workForSearch(ctx, work)) as unknown as WorkForMatch);
-    const alias = match.ok ? { anidbId: match.anidbId, season: match.season, sceneSeason: match.sceneSeason } : undefined;
+    const alias: MatchedAlias = match.ok ? match.alias : { kind: 'plain' };
 
     const resolved: ResolvedFile[] = [];
     for (const { relPath } of files) {

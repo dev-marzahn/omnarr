@@ -1,10 +1,7 @@
-{
-  "result": "success",
-  "data": {
-    "all": { "en": ["JoJo's Bizarre Adventure (2012)"], "ja": ["JoJo no Kimyou na Bouken"] },
-    "2": { "en": ["JoJo's Bizarre Adventure - Stardust Crusaders"] },
-    "5": { "en": ["JoJo's Bizarre Adventure - Stone Ocean"] },
-    "6": { "ja": ["JoJo no Kimyou na Bouken: Steel Ball Run"] }
-  },
-  "message": ""
-}
+[
+  { "JoJo's Bizarre Adventure (2012)": -1 },
+  { "JoJo no Kimyou na Bouken": -1 },
+  { "JoJo's Bizarre Adventure - Stardust Crusaders": 2 },
+  { "JoJo's Bizarre Adventure - Stone Ocean": 5 },
+  { "JoJo no Kimyou na Bouken: Steel Ball Run": 6 }
+]

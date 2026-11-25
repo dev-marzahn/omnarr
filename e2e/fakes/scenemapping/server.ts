@@ -10,11 +10,20 @@
 import { createServer, type Server } from 'node:http';
 import { fileURLToPath } from 'node:url';
 
-/** Harbour Lights (TVDB 7700001): two all-seasons names, and a season-specific one the backend leaves out. */
 export const SCENE_MAPPINGS = [
   { mappingId: 's-e2e000000000000000000001', tvdbId: 7700001, title: 'Harbour Lights UK', searchTitle: 'Harbour Lights', season: -1 },
   { mappingId: 's-e2e000000000000000000002', tvdbId: 7700001, title: 'The Harbour Lights', searchTitle: 'Harbour Lights', season: -1 },
   { mappingId: 's-e2e000000000000000000003', tvdbId: 7700001, title: 'Harbour Lights Winter Tales', searchTitle: 'Harbour Lights Winter Tales', season: 0 },
+  {
+    mappingId: 's-e2e000000000000000000004',
+    tvdbId: 7700001,
+    title: 'Harbour Lights Next Chapter',
+    searchTitle: 'Harbour Lights Next Chapter',
+    season: 2,
+    sceneSeasonNumber: 1,
+  },
+  { mappingId: 's-e2e000000000000000000005', tvdbId: 7700001, title: 'Harbour Lights Far Future', searchTitle: 'Harbour Lights Far Future', season: 5 },
+  { mappingId: 's-e2e000000000000000000006', tvdbId: 7700001, title: 'Harbour', searchTitle: 'Harbour', season: -1, filterRegex: '(?i)^Harbour\\.S01E' },
 ];
 
 export type SceneMappingRequest = { at: number; path: string; userAgent?: string };
