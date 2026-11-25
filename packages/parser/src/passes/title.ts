@@ -3,8 +3,8 @@
 import type { ParsedRelease } from '@omnarr/contracts';
 
 import { normalizeTitle } from '../normalize.ts';
+import { YEAR } from './tokens.ts';
 
-const YEAR = /^(19|20)\d\d$/;
 const COUNTRY = /^[A-Z]{2}$/;
 
 export function withTitle(partial: ParsedRelease, title: string): ParsedRelease {

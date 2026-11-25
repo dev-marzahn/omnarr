@@ -13,11 +13,18 @@ export function tokensOf(cleanTitle: string): string[] {
 /** The hyphen-separated parts of a compound token. */
 export const partsOf = (token: string): string[] => token.split('-').filter(Boolean);
 
+export const EPISODE_MARK = /\bS\d{1,4}E\d{1,4}|\b\d{1,2}x\d{1,4}\b/i;
+export const versionCapture = (name: string): string => `v(?<${name}>\\d+)(?![a-z\\d])`;
+export const YEAR_DIGITS = '(?:19|20)\\d\\d';
+export const YEAR = new RegExp(`^${YEAR_DIGITS}$`);
+
 const loose = (text: string) => text.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '');
 
 /** Season, episode, absolute, date and year tokens that follow the title. */
-const NUMBERING =
-  /^(s\d{1,4}(e\d{1,4})*(-?(s|e)?\d{1,4})*|e\d{1,4}(-?e?\d{1,4})*|\d{1,2}x\d{1,4}(-?(\d{1,2}x)?\d{1,4})*|\d{1,4}(v\d)?|season|seasons|complete|part|episode|ep|vol|volume)$/i;
+const NUMBERING = new RegExp(
+  `^(s\\d{1,4}(e\\d{1,4})*(-?(s|e)?\\d{1,4})*|e\\d{1,4}(-?e?\\d{1,4})*|\\d{1,2}x\\d{1,4}(-?(\\d{1,2}x)?\\d{1,4})*|\\d{1,4}(?:${versionCapture('version')})?|season|seasons|complete|part|episode|ep|vol|volume)$`,
+  'i',
+);
 
 /** The first token that names the quality: a resolution, a source or a codec. */
 export const QUALITY_TOKEN =

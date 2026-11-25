@@ -3,11 +3,8 @@
 // air date into a calendar date; this pass reads what the library leaves out.
 import type { ParsedRelease } from '@omnarr/contracts';
 
-import { EPISODE_MARK } from './cleanup.ts';
 import { withTitle } from './title.ts';
-import { QUALITY_TOKEN, tokensOf } from './tokens.ts';
-
-const YEAR = /^(19|20)\d\d$/;
+import { EPISODE_MARK, QUALITY_TOKEN, tokensOf, versionCapture, YEAR } from './tokens.ts';
 
 /** `S02E05 (1071)` or `S02E05 - 1071`: an absolute number right after a single SxxEyy. */
 const DUAL = /\bS\d{1,4}E\d{1,4}\s*(?:\(\s*(\d{2,4})\s*\)|-\s*(\d{2,4})(?![\dp]))/i;
@@ -61,7 +58,7 @@ function yearOf(cleanTitle: string, partial: ParsedRelease): number | undefined 
  * a season pack, which drops the part; the part stays in the title, and the
  * number after the dash is the absolute number.
  */
-const PART_DASH_EPISODE = /^(?:\[[^\]]+\]\s*)?(.+?\bPart\s?(\d{1,2}))\s+-\s+(\d{2,4})(?:v\d)?(?![\d-])/i;
+const PART_DASH_EPISODE = new RegExp(`^(?:\\[[^\\]]+\\]\\s*)?(.+?\\bPart\\s?(\\d{1,2}))\\s+-\\s+(\\d{2,4})(?:${versionCapture('version')})?(?![\\d-])`, 'i');
 
 function partDashEpisode(cleanTitle: string, partial: ParsedRelease): ParsedRelease {
   const match = PART_DASH_EPISODE.exec(cleanTitle);
@@ -71,8 +68,15 @@ function partDashEpisode(cleanTitle: string, partial: ParsedRelease): ParsedRele
   return { ...withTitle(release, match[1]!.trim()), episodes: [{ absolute: Number(match[3]) }] };
 }
 
+const VERSION_AFTER_EPISODE_MARK = new RegExp(`\\bS\\d{1,4}E\\d{1,4}(?:[-E]\\d{1,4})*\\.?${versionCapture('version')}`, 'i');
+
+function versionAfterEpisodeMark(cleanTitle: string, partial: ParsedRelease): ParsedRelease {
+  const version = VERSION_AFTER_EPISODE_MARK.exec(cleanTitle)?.groups?.version;
+  return version === undefined ? partial : { ...partial, revision: { ...partial.revision, version: Number(version) } };
+}
+
 export function numbers(cleanTitle: string, input: ParsedRelease): ParsedRelease {
-  const partial = partDashEpisode(cleanTitle, input);
+  const partial = partDashEpisode(cleanTitle, versionAfterEpisodeMark(cleanTitle, input));
   const release = { ...partial, episodes: dualNumbering(cleanTitle, partial) };
   const misread = yearReadAsEpisode(cleanTitle, release);
   if (misread !== undefined) {
