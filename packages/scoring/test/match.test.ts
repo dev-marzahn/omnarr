@@ -1,4 +1,4 @@
-import type { IndexerItem } from '@omnarr/contracts';
+import type { IndexerItem, ParsedRelease } from '@omnarr/contracts';
 import { parseRelease } from '@omnarr/parser';
 import { describe, expect, test } from 'vite-plus/test';
 
@@ -139,7 +139,7 @@ describe('matchTitle', () => {
       expect(matchTitle(release({ normalizedTitle: 'jojos bizarre adventure stone ocean', ...absolute }), item(), parts)).toEqual({
         ok: true,
         aliasId: 'j1',
-        alias: { kind: 'partSeason', season: 5, ordering: 'scene' },
+        alias: { kind: 'partSeason', season: 5, ordering: 'scene', releaseSeason: 1 },
       });
     });
 
@@ -147,7 +147,7 @@ describe('matchTitle', () => {
       expect(matchTitle(release({ normalizedTitle: 'jojos bizarre adventure steel ball run', ...absolute }), item(), parts)).toEqual({
         ok: true,
         aliasId: 'j1',
-        alias: { kind: 'partSeason', season: 6, ordering: 'tmdb' },
+        alias: { kind: 'partSeason', season: 6, ordering: 'tmdb', releaseSeason: 1 },
       });
     });
 
@@ -156,7 +156,7 @@ describe('matchTitle', () => {
       expect(matchTitle(release({ normalizedTitle: 'jojos bizarre adventure steel ball run', ...absolute }), item(), withAlt)).toEqual({
         ok: true,
         aliasId: 'j1',
-        alias: { kind: 'partSeason', season: 6, ordering: 'tmdb' },
+        alias: { kind: 'partSeason', season: 6, ordering: 'tmdb', releaseSeason: 1 },
       });
     });
 
@@ -165,16 +165,19 @@ describe('matchTitle', () => {
       expect(matchTitle(release({ normalizedTitle: 'jojos bizarre adventure steel ball run', ...absolute }), item(), onlyAnidb)).toEqual({
         ok: true,
         aliasId: 'a1',
-        alias: { kind: 'partSeason', season: 6, ordering: 'tmdb' },
+        alias: { kind: 'partSeason', season: 6, ordering: 'tmdb', releaseSeason: 1 },
       });
     });
 
     test("a part's alias listed before the same general alias does not hide it", () => {
-      const xemFirst: WorkForMatch = { ...parts, aliases: [{ aliasId: alias('x1'), normalized: 'jojos bizarre adventure', sceneSeason: 2 }, ...parts.aliases] };
+      const xemFirst: WorkForMatch = {
+        ...parts,
+        aliases: [{ aliasId: alias('x1'), normalized: 'jojos bizarre adventure', partSeason: { season: 2, ordering: 'scene' } }, ...parts.aliases],
+      };
       expect(matchTitle(release({ normalizedTitle: 'jojos bizarre adventure steel ball run', ...absolute }), item(), xemFirst)).toEqual({
         ok: true,
         aliasId: 'j1',
-        alias: { kind: 'partSeason', season: 6, ordering: 'tmdb' },
+        alias: { kind: 'partSeason', season: 6, ordering: 'tmdb', releaseSeason: 1 },
       });
     });
   });
@@ -280,6 +283,49 @@ describe('matchTitle', () => {
 
   test('extras are rejected', () => {
     expect(matchTitle(release({ normalizedTitle: 'the long harbor', extras: true, ...episode }), item(), harbor)).toEqual({ ok: false, detail: 'extras' });
+  });
+
+  describe("a scene-mapping name that names only some releases (Sonarr's filterRegex and sceneSeasonNumber)", () => {
+    const babylon: WorkForMatch = {
+      kind: 'series',
+      aliases: [{ aliasId: alias('b1'), normalized: 'babylon', filter: '(?i)-(BRAVERY|RiVER)$' }],
+      ids: { tmdb: '900201' },
+    };
+    const newBlood: WorkForMatch = {
+      kind: 'series',
+      aliases: [
+        { aliasId: alias('d1'), normalized: 'dexter new blood' },
+        { aliasId: alias('d2'), normalized: 'dexter', partSeason: { season: 1, ordering: 'scene' }, releaseSeason: 9 },
+      ],
+      ids: { tmdb: '900202' },
+    };
+    const dexter = (episodes: ParsedRelease['episodes'], pack?: ParsedRelease['pack']) =>
+      release({ normalizedTitle: 'dexter', episodes, ...(pack ? { pack } : {}) });
+
+    test('a filtered name matches only the release titles its pattern matches', () => {
+      const babylonRelease = release({ normalizedTitle: 'babylon', ...episode });
+      expect(matchTitle(babylonRelease, item({ title: 'Babylon.S01E02.720p.HDTV.x264-RiVER' }), babylon)).toMatchObject({ ok: true, aliasId: 'b1' });
+      expect(matchTitle(babylonRelease, item({ title: 'Babylon.S01E02.720p.HDTV.x264-OTHER' }), babylon)).toEqual({ ok: false, detail: 'title' });
+    });
+
+    test('a name with a release season matches releases of that season only', () => {
+      expect(matchTitle(dexter([{ season: 9, episode: 1 }]), item(), newBlood)).toMatchObject({ ok: true, aliasId: 'd2' });
+      expect(matchTitle(dexter([{ season: 1, episode: 1 }]), item(), newBlood)).toEqual({ ok: false, detail: 'title' });
+      expect(matchTitle(dexter([], { seasons: [9], full: true }), item(), newBlood)).toMatchObject({ ok: true, aliasId: 'd2' });
+      expect(matchTitle(dexter([], { seasons: [8, 9], full: true }), item(), newBlood)).toEqual({ ok: false, detail: 'title' });
+    });
+
+    test('a release that names no season, by absolute number, fits a name with a release season', () => {
+      expect(matchTitle(dexter([{ absolute: 3 }]), item(), newBlood)).toMatchObject({ ok: true, aliasId: 'd2' });
+    });
+
+    test("a catastrophic-backtracking filter doesn't stall matching", () => {
+      const evil: WorkForMatch = { ...babylon, aliases: [{ aliasId: alias('b2'), normalized: 'babylon', filter: '(a+)+$' }] };
+      const started = performance.now();
+      const match = matchTitle(release({ normalizedTitle: 'babylon', ...episode }), item({ title: `Babylon.${'a'.repeat(20_000)}!` }), evil);
+      expect(match).toEqual({ ok: false, detail: 'title' });
+      expect(performance.now() - started).toBeLessThan(1_000);
+    });
   });
 });
 

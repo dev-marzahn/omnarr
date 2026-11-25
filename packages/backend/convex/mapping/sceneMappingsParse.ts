@@ -1,45 +1,66 @@
-// Parsing Sonarr's scene mappings (`GET services.sonarr.tv/v1/scenemapping`).
-// The list is community data from
-// outside, so every entry is checked on its own and a bad one is skipped.
-// Only all-seasons names (`season: -1`) are kept: `season` is a TVDB season,
-// which omnarr's `sceneSeason` (XEM's scene season) can't hold, and a
-// `filterRegex` is an untrusted pattern that applies to some releases only.
+import { isReadableReleaseFilter } from '@omnarr/scoring';
 import { z } from 'zod';
 
+import { sha256 } from '../lib/sha256';
 import { releaseName } from './releaseName';
 
-/** One stored mapping: a release name Sonarr's community lists for a TVDB series, in every season. */
-export const SceneMappingEntry = z.object({ mappingId: z.string(), tvdbId: z.number(), title: z.string() });
+export const SceneMappingName = z.object({
+  title: z.string(),
+  tvdbSeason: z.number().optional(),
+  releaseSeason: z.number().optional(),
+  filter: z.string().optional(),
+});
+export type SceneMappingName = z.infer<typeof SceneMappingName>;
+
+export const SceneMappingEntry = SceneMappingName.extend({ mappingId: z.string(), tvdbId: z.number(), contentHash: z.string() });
 export type SceneMappingEntry = z.infer<typeof SceneMappingEntry>;
 
-/** Live IDs are `s-` and 24 hex digits. */
+export const StoredSceneMapping = SceneMappingEntry.partial({ contentHash: true });
+
 const MAPPING_ID = /^[A-Za-z0-9_-]{1,64}$/;
+
+const EVERY_SEASON = -1;
+
+const SeasonNumber = z
+  .number()
+  .int()
+  .min(EVERY_SEASON)
+  .nullish()
+  .transform((season) => (season === EVERY_SEASON || season == null ? undefined : season));
 
 const Raw = z.object({
   mappingId: z.string().regex(MAPPING_ID),
   tvdbId: z.number().int().positive(),
   title: z.string(),
-  season: z.number().int().nullish(),
-  sceneSeasonNumber: z.number().int().nullish(),
-  filterRegex: z.string().nullish(),
+  season: SeasonNumber,
+  sceneSeasonNumber: SeasonNumber,
+  filterRegex: z
+    .string()
+    .nullish()
+    .transform((pattern) => pattern?.trim() || undefined),
+  sceneOrigin: z.string().nullish(),
 });
+type Raw = z.infer<typeof Raw>;
 
-/**
- * The list's all-seasons names, in list order. Throws on a body that is not
- * a list, or an empty list (Sonarr also keeps its copy then), so the fetch
- * fails and the stored copy stays.
- */
-export function parseSceneMappings(json: unknown): SceneMappingEntry[] {
-  const list = z.array(z.unknown()).min(1).parse(json);
-  const entries: SceneMappingEntry[] = [];
-  for (const item of list) {
-    const raw = Raw.safeParse(item);
-    if (!raw.success) continue;
-    const { mappingId, tvdbId, season, sceneSeasonNumber, filterRegex } = raw.data;
-    const title = releaseName(raw.data.title);
-    if ((season ?? -1) !== -1 || (sceneSeasonNumber ?? -1) !== -1 || filterRegex?.trim()) continue;
-    if (!title) continue;
-    entries.push({ mappingId, tvdbId, title });
-  }
-  return entries;
+const numbersInSceneOrder = (raw: Raw) => !raw.sceneOrigin || raw.sceneOrigin === 'scene';
+
+type ParsedSceneMapping = Omit<SceneMappingEntry, 'contentHash'>;
+
+function sceneMappingOf(item: unknown): ParsedSceneMapping | undefined {
+  const raw = Raw.safeParse(item);
+  if (!raw.success) return undefined;
+  const { mappingId, tvdbId, season: tvdbSeason, sceneSeasonNumber: releaseSeason, filterRegex: filter } = raw.data;
+  const title = releaseName(raw.data.title);
+  const namesOneSeason = tvdbSeason !== undefined || releaseSeason !== undefined;
+  if (!title || (filter !== undefined && !isReadableReleaseFilter(filter)) || (namesOneSeason && !numbersInSceneOrder(raw.data))) return undefined;
+  return { mappingId, tvdbId, title, tvdbSeason, releaseSeason, filter };
+}
+
+export async function parseSceneMappings(json: unknown): Promise<SceneMappingEntry[]> {
+  const entries = z
+    .array(z.unknown())
+    .min(1)
+    .parse(json)
+    .flatMap((item) => sceneMappingOf(item) ?? []);
+  return Promise.all(entries.map(async (entry) => ({ ...entry, contentHash: await sha256(JSON.stringify(entry)) })));
 }

@@ -54,7 +54,7 @@ const label = (unitId: Id<'units'>) =>
 async function resolveTitle(workId: Id<'works'>, title: string) {
   const parsed = parseRelease(title, 'series');
   return t.run(async (ctx) => {
-    const anidbId = (await findWorksByTitle(ctx, parsed.normalizedTitle)).find((match) => match.workId === workId)?.anidbId;
+    const anidbId = (await findWorksByTitle(ctx, parsed.normalizedTitle, 'releaseTitle')).find((match) => match.workId === workId)?.anidbId;
     return resolveUnits(ctx, workId, parsed.episodes, parsed.airDate, anidbId === undefined ? { kind: 'plain' } : { kind: 'anidb', anidbId });
   });
 }
@@ -507,7 +507,7 @@ describe('a part named by its XEM season name', () => {
         })
       ).workId;
     }
-    const steelBallRun = { kind: 'partSeason', season: 6, ordering: 'tmdb' } as const;
+    const steelBallRun = { kind: 'partSeason', season: 6, ordering: 'tmdb', releaseSeason: 1 } as const;
 
     test.each([
       ["[Anku & mutagenb] JoJo's Bizarre Adventure Steel Ball Run - 03 [1080p rus].mkv", 'S6E3'],
@@ -686,6 +686,62 @@ async function attackOnTitan(xem: 'whole' | 'split') {
   ).workId;
 }
 
+describe("Sonarr's scene-mapping names for one season or some releases", () => {
+  const harbourWithSceneNames = async () => {
+    await t.run(async (ctx) => {
+      const insert = (mappingId: string, fields: { title: string; tvdbSeason?: number; releaseSeason?: number; filter?: string }) =>
+        ctx.db.insert('sceneMappings', { mappingId, tvdbId: 7700001, seenVersion: 'v1', ...fields });
+      await insert('s-next', { title: 'Harbour Lights Next Chapter', tvdbSeason: 2, releaseSeason: 1 });
+      await insert('s-filtered', { title: 'Harbour', filter: '(?i)^Harbour\\.S01E' });
+      await insert('s-specials', { title: 'Harbour Lights Winter Tales', tvdbSeason: 2 });
+    });
+    return subscribe('900001', [1, 2]);
+  };
+
+  test("a name with only a TVDB season expects its releases to write that season: S02E02 reads S2E2, and S01E02 is no title of the Work's", async () => {
+    const workId = await harbourWithSceneNames();
+    expect(await matchAndResolve(workId, 'Harbour.Lights.Winter.Tales.S02E02.1080p.WEB.h264-GRP')).toMatchObject({ labels: ['S2E2'] });
+    expect(await matchAndResolve(workId, 'Harbour.Lights.Winter.Tales.S01E02.1080p.WEB.h264-GRP', { ids: false })).toEqual({ ok: false, detail: 'title' });
+  });
+
+  test('search titles leave out a filtered name and one whose releases write another season than its own', async () => {
+    const workId = await harbourWithSceneNames();
+    const unit = await unitAt(workId, 2, 3);
+    const keys = await t.run((ctx) => searchKeys(ctx, workId, [unit._id]));
+    expect(keys.searchTitles).toContain('Harbour Lights Winter Tales');
+    expect(keys.searchTitles).not.toContain('Harbour Lights Next Chapter');
+    expect(keys.searchTitles).not.toContain('Harbour');
+  });
+
+  test('a name for TVDB season 2 whose releases write S01 reads S01E03 as S2E3', async () => {
+    const workId = await harbourWithSceneNames();
+    expect(await matchAndResolve(workId, 'Harbour.Lights.Next.Chapter.S01E03.1080p.WEB.h264-GRP')).toMatchObject({ labels: ['S2E3'] });
+  });
+
+  test('the same name on a release of another season matches no title, so it is never read as that season', async () => {
+    const workId = await harbourWithSceneNames();
+    expect(await matchAndResolve(workId, 'Harbour.Lights.Next.Chapter.S03E03.1080p.WEB.h264-GRP', { ids: false })).toEqual({ ok: false, detail: 'title' });
+  });
+
+  test("a part whose releases write season 4 reads S04E03 in the part (Food Safari's S04 is TVDB's S06); another season is ambiguous", async () => {
+    const workId = await harbourWithSceneNames();
+    const part = { kind: 'partSeason', season: 2, ordering: 'tmdb', releaseSeason: 4 } as const;
+    expect(await resolve(workId, [{ season: 4, episode: 3 }], undefined, part)).toMatchObject({ unitIds: [(await unitAt(workId, 2, 3))._id] });
+    expect(await resolve(workId, [{ season: 3, episode: 3 }], undefined, part)).toMatchObject({ unitIds: [], problem: 'ambiguous' });
+  });
+
+  test('the show under its own name still reads its own seasons', async () => {
+    const workId = await harbourWithSceneNames();
+    expect(await matchAndResolve(workId, 'Harbour.Lights.S01E03.1080p.WEB.h264-GRP')).toMatchObject({ labels: ['S1E3'] });
+  });
+
+  test('a filtered name matches only the titles its pattern matches', async () => {
+    const workId = await harbourWithSceneNames();
+    expect(await matchAndResolve(workId, 'Harbour.S01E02.720p.HDTV.x264-GRP')).toMatchObject({ labels: ['S1E2'] });
+    expect(await matchAndResolve(workId, 'Harbour.S02E02.720p.HDTV.x264-GRP', { ids: false })).toEqual({ ok: false, detail: 'title' });
+  });
+});
+
 describe('a cour after a season name is never dropped (Attack on Titan, the part-title fix)', () => {
   const rejected = { ok: false, detail: 'title' };
   // A wrong grab is worse than a miss: each title is its episode or rejected, never S4E5 or S3E1 with the part dropped.
@@ -794,11 +850,25 @@ describe('findWorksByTitle', () => {
   test('lists every Work with the alias, and per Work the alias without an AniDB link first', async () => {
     await seedAnimeLists(t);
     const workId = await subscribe('900002', [1, 2]);
-    const matches = await t.run((ctx) => findWorksByTitle(ctx, 'star lantern'));
+    const matches = await t.run((ctx) => findWorksByTitle(ctx, 'star lantern', 'releaseTitle'));
     expect(matches.map((m) => [m.workId, m.anidbId])).toEqual([
       [workId, undefined],
       [workId, 17001],
     ]);
-    expect(await t.run((ctx) => findWorksByTitle(ctx, 'no such show'))).toEqual([]);
+    expect(await t.run((ctx) => findWorksByTitle(ctx, 'no such show', 'releaseTitle'))).toEqual([]);
+  });
+
+  test('a folder name never finds a Work through a name for some releases only; a release title does, and matchTitle checks it', async () => {
+    const workId = await subscribe('900002', [1]);
+    await t.run(async (ctx) => {
+      const insert = (normalized: string, fields: { releaseSeason?: number; filter?: string; sceneSeason?: number }) =>
+        ctx.db.insert('workAliases', { workId, title: normalized, normalized, compact: normalized.replaceAll(' ', ''), source: 'sceneMapping', ...fields });
+      await insert('dexter', { sceneSeason: 1, releaseSeason: 9 });
+      await insert('babylon', { filter: '-RiVER$' });
+    });
+    for (const title of ['dexter', 'babylon']) {
+      expect(await t.run((ctx) => findWorksByTitle(ctx, title, 'folderName'))).toEqual([]);
+      expect((await t.run((ctx) => findWorksByTitle(ctx, title, 'releaseTitle'))).map((m) => m.workId)).toEqual([workId]);
+    }
   });
 });

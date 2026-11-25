@@ -1,9 +1,9 @@
 // Pure rules for numbers, dates and titles: the numbering
 // scheme suggestion, a movie's date, the Absolute group choice and the
 // alias list. No Convex imports.
-import type { AliasSource, NumberingReason, NumberingScheme, SeasonName, SeasonNameForMatch, WorkKind } from '@omnarr/contracts';
+import type { AliasReading, AliasSource, NumberingReason, NumberingScheme, PartSeason, SeasonName, SeasonNameForMatch, WorkKind } from '@omnarr/contracts';
 import { compactTitle, normalizeTitle } from '@omnarr/parser';
-import { splitSeasonName } from '@omnarr/scoring';
+import { namesEveryRelease, splitSeasonName } from '@omnarr/scoring';
 
 /** TMDB's genre ID for Animation. */
 const ANIMATION = 16;
@@ -65,7 +65,17 @@ export function selectAbsoluteOrder(regular: TmdbNumber[], groups: AbsoluteGroup
   return { order: groups.episodes!.filter((n) => listed.has(numberKey(n))) };
 }
 
-export type Alias = { title: string; normalized: string; source: Exclude<AliasSource, 'manual'>; anidbId?: number; sceneSeason?: number };
+export type Alias = AliasReading & { title: string; normalized: string; source: Exclude<AliasSource, 'manual'> };
+
+type AliasIdentity = AliasReading & { source: AliasSource; normalized: string };
+
+const nameKey = ({ source, normalized, anidbId, releaseSeason, filter }: AliasIdentity): unknown[] => [source, normalized, anidbId, releaseSeason, filter];
+
+export const aliasIdentity = (alias: AliasIdentity): string => JSON.stringify([...nameKey(alias), alias.partSeason?.season, alias.partSeason?.ordering]);
+
+export type NamedReading = AliasReading & { title: string };
+
+const samePartSeason = (a: PartSeason | undefined, b: PartSeason | undefined) => a?.season === b?.season && a?.ordering === b?.ordering;
 
 /** A linked Anime-Lists entry, and whether its first episode is the Unit with TMDB absolute 1. */
 export type AliasEntry = { anidbId: number; name: string; startsAtAbsoluteOne: boolean };
@@ -114,40 +124,45 @@ export function aliasList(input: {
   tmdbTitles: string[];
   animeLists: AliasEntry[];
   xemNames: { title: string; sceneSeason?: number }[];
-  sceneMappings?: string[];
+  sceneMappings?: NamedReading[];
   seasonNames?: SeasonNameForMatch[];
 }): Alias[] {
   const aliases: Alias[] = [];
   const seen = new Map<string, Alias>();
+  const conflicted = new Set<Alias>();
   const laterEntries = new Set(input.animeLists.filter((entry) => !entry.startsAtAbsoluteOne).map((entry) => normalizeTitle(entry.name)));
-  const add = (title: string, source: Alias['source'], anidbId?: number, sceneSeason?: number) => {
+  const add = (title: string, source: Alias['source'], reading: AliasReading = {}) => {
     const normalized = normalizeTitle(title);
-    const key = `${source}:${anidbId ?? ''}:${normalized}`;
+    const key = JSON.stringify(nameKey({ ...reading, source, normalized }));
     const earlier = seen.get(key);
-    if (earlier && earlier.sceneSeason !== sceneSeason) delete earlier.sceneSeason;
+    if (earlier && !samePartSeason(earlier.partSeason, reading.partSeason)) {
+      if (namesEveryRelease(earlier)) earlier.partSeason = undefined;
+      else conflicted.add(earlier);
+    }
     if (!normalized || earlier) return;
     if (source === 'tmdb' && laterEntries.has(normalized)) return;
-    const alias: Alias = { title, normalized, source, ...(anidbId === undefined ? {} : { anidbId }), ...(sceneSeason === undefined ? {} : { sceneSeason }) };
+    const alias: Alias = { title, normalized, source, ...reading };
     seen.set(key, alias);
     aliases.push(alias);
   };
   for (const title of input.tmdbTitles) add(title, 'tmdb');
-  for (const entry of input.animeLists) add(entry.name, 'animeLists', entry.anidbId);
-  for (const name of input.xemNames) add(name.title, 'xem', undefined, name.sceneSeason);
-  for (const title of input.sceneMappings ?? []) add(title, 'sceneMapping');
-  const general = aliases.filter((alias) => alias.anidbId === undefined && alias.sceneSeason === undefined);
+  for (const entry of input.animeLists) add(entry.name, 'animeLists', { anidbId: entry.anidbId });
+  for (const { title, sceneSeason } of input.xemNames)
+    add(title, 'xem', { partSeason: sceneSeason === undefined ? undefined : { season: sceneSeason, ordering: 'scene' } });
+  for (const { title, ...reading } of input.sceneMappings ?? []) add(title, 'sceneMapping', reading);
+  const general = aliases.filter((alias) => alias.anidbId === undefined && alias.partSeason === undefined && namesEveryRelease(alias));
   for (const alias of general) {
     const split = splitSeasonName(alias.normalized, input.seasonNames ?? [], (rest) =>
       general.find((other) => other !== alias && compactTitle(other.normalized) === compactTitle(rest)),
     );
-    if (split?.seasonName.sceneSeason !== undefined) alias.sceneSeason = split.seasonName.sceneSeason;
+    if (split?.seasonName.sceneSeason !== undefined) alias.partSeason = { season: split.seasonName.sceneSeason, ordering: 'scene' };
   }
   // `Attack on Titan: The Final Season Part 2` with no scene season of its own: a cour nothing places. Its number would be
   // read across the whole series, a wrong episode, so it isn't written, and its releases are rejected (the part-title fix).
   const unplaced = (alias: Alias) =>
     alias.anidbId === undefined &&
-    alias.sceneSeason === undefined &&
+    alias.partSeason === undefined &&
     TRAILING_PART.test(alias.normalized) &&
-    general.some((other) => other !== alias && other.sceneSeason === undefined && alias.normalized.startsWith(`${other.normalized} `));
-  return aliases.filter((alias) => !unplaced(alias));
+    general.some((other) => other !== alias && other.partSeason === undefined && alias.normalized.startsWith(`${other.normalized} `));
+  return aliases.filter((alias) => !unplaced(alias) && !conflicted.has(alias));
 }

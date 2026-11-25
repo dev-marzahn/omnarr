@@ -162,14 +162,14 @@ describe('the pipeline on the real stack', () => {
     await waitFor('the picks', async () => ((await unit(1)).state === 'grabbed' && (await unit(2)).state === 'grabbed' ? true : undefined));
   });
 
-  test("the metadata tick fetches Sonarr's scene mappings from the fake, and Harbour Lights gets its all-seasons names", async () => {
+  test("the metadata tick fetches Sonarr's scene mappings from the fake, and Harbour Lights gets its names, the one for a season TMDB doesn't list left out", async () => {
     runInternal(d, 'metadata/schedule:tick');
     const names = await waitFor("Harbour Lights' scene-mapping aliases", async () => {
       const info = await query('api/metadata:workInfo', { workId });
       const titles = (info?.aliases ?? []).filter((a: { source: string }) => a.source === 'sceneMapping').map((a: { title: string }) => a.title);
       return titles.length > 0 ? titles : undefined;
     });
-    expect(names.sort()).toEqual(['Harbour Lights UK', 'The Harbour Lights']);
+    expect(names.sort()).toEqual(['Harbour', 'Harbour Lights Next Chapter', 'Harbour Lights UK', 'Harbour Lights Winter Tales', 'The Harbour Lights']);
     expect(sceneMappingRequests()).toContainEqual({ at: expect.any(Number), path: '/v1/scenemapping', userAgent: expect.stringMatching(/^omnarr\//) });
   });
 

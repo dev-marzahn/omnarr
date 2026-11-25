@@ -3,6 +3,7 @@
 // Each is a plain function for mutations and queries, with an internal query
 // wrapper for actions. All of them only read.
 import {
+  type AliasReading,
   type AliasSource,
   type Confidence,
   MatchedAlias,
@@ -14,30 +15,38 @@ import {
   type UnitRef,
 } from '@omnarr/contracts';
 import { compactTitle, normalizeTitle } from '@omnarr/parser';
+import { namesEveryRelease, releaseSeasonAllows } from '@omnarr/scoring';
 import { zid, zodToConvex, zodToConvexFields } from 'convex-helpers/server/zod4';
 import { z } from 'zod';
 
 import type { Doc, Id } from '../_generated/dataModel';
 import { internalQuery, type QueryCtx } from '../_generated/server';
-import { workMetadataOf } from './write';
+import { readingOfStored, workMetadataOf } from './write';
 
 export type WorkByTitle = { workId: Id<'works'>; aliasId: Id<'workAliases'>; anidbId?: number };
+
+export type TitleLookup = 'releaseTitle' | 'folderName';
 
 /**
  * Works with an alias whose normalized title is this one, else whose compact
  * form is this title's (a hyphen on either side); per Work, the
  * alias without an AniDB link first.
  */
-export async function findWorksByTitle(ctx: QueryCtx, normalizedTitle: string): Promise<WorkByTitle[]> {
-  let aliases = await ctx.db
-    .query('workAliases')
-    .withIndex('by_normalized', (q) => q.eq('normalized', normalizedTitle))
-    .collect();
-  if (aliases.length === 0)
-    aliases = await ctx.db
+export async function findWorksByTitle(ctx: QueryCtx, normalizedTitle: string, lookup: TitleLookup): Promise<WorkByTitle[]> {
+  const usable = (aliases: Doc<'workAliases'>[]) => (lookup === 'folderName' ? aliases.filter(namesEveryRelease) : aliases);
+  let aliases = usable(
+    await ctx.db
       .query('workAliases')
-      .withIndex('by_compact', (q) => q.eq('compact', compactTitle(normalizedTitle)))
-      .collect();
+      .withIndex('by_normalized', (q) => q.eq('normalized', normalizedTitle))
+      .collect(),
+  );
+  if (aliases.length === 0)
+    aliases = usable(
+      await ctx.db
+        .query('workAliases')
+        .withIndex('by_compact', (q) => q.eq('compact', compactTitle(normalizedTitle)))
+        .collect(),
+    );
   const linked = (alias: Doc<'workAliases'>) => (alias.anidbId === undefined ? 0 : 1);
   const workOrder = [...new Set(aliases.map((alias) => alias.workId))];
   return aliases
@@ -312,9 +321,12 @@ type PartSeasonReading = {
   unclearAs: Partial<Pick<ResolveResult, 'via' | 'confidence'>>;
 };
 
-type PartSeason = { season: number; reading: PartSeasonReading; inPart: Allowed };
+type PartReading = { season: number; releaseSeason: number; reading: PartSeasonReading; inPart: Allowed };
 
-const partSeason = (season: number, reading: PartSeasonReading, allowed: Allowed): PartSeason => ({ season, reading, inPart: reading.orderings(allowed) });
+const partReadingOf = ({ season, ordering, releaseSeason }: Extract<MatchedAlias, { kind: 'partSeason' }>, allowed: Allowed): PartReading => {
+  const reading = PART_SEASON_READINGS[ordering];
+  return { season, releaseSeason, reading, inPart: reading.orderings(allowed) };
+};
 
 const VIA_SCENE = { via: { ordering: 'scene', source: 'xem' }, confidence: 'mapped' } as const;
 
@@ -336,11 +348,11 @@ const PART_SEASON_READINGS: Record<PartSeasonOrdering, PartSeasonReading> = {
 async function byPartSeason(
   ctx: QueryCtx,
   workId: Id<'works'>,
-  part: PartSeason,
+  part: PartReading,
   episodes: ParsedEpisode[],
   allowed: Allowed,
 ): Promise<Found | Ambiguous | null> {
-  const { season, reading, inPart } = part;
+  const { season, releaseSeason, reading, inPart } = part;
   const numbers = episodes.filter((e) => e.season !== undefined);
   const ifComplete = (found: Found | null) => (found && complete(found) ? found : null);
   const partReading = () =>
@@ -350,7 +362,7 @@ async function byPartSeason(
       numbers.map((e) => ({ season, episode: e.episode })),
       inPart,
     );
-  const nameAndSeasonDisagree = numbers.some((e) => e.season !== season && e.season !== 1);
+  const nameAndSeasonDisagree = numbers.some((e) => e.season !== season && !releaseSeasonAllows({ releaseSeason }, e.season));
   if (nameAndSeasonDisagree) return ambiguous(ifComplete(await partReading()), ifComplete(await bySeasonEpisode(ctx, workId, numbers, allowed)));
   const found = await partReading();
   if (found && complete(found) && episodes.some((e) => e.absolute !== undefined)) {
@@ -416,8 +428,7 @@ export async function resolveUnits(
     if (anyFound(found)) return answer(found);
   }
 
-  const part = alias.kind === 'partSeason' ? partSeason(alias.season, PART_SEASON_READINGS[alias.ordering], allowed) : undefined;
-  // A part's name with season numbers: read within the part, never as another season.
+  const part = alias.kind === 'partSeason' ? partReadingOf(alias, allowed) : undefined;
   if (part && episodes.some((e) => e.season !== undefined)) {
     const found = await byPartSeason(ctx, workId, part, episodes, allowed);
     if (isAmbiguous(found)) return unclear(found, part.reading.unclearAs);
@@ -471,14 +482,15 @@ export async function resolveUnits(
 /** Scene names first: release groups name a show as XEM and the scene-mapping list do. */
 const SEARCH_TITLE_RANK: Record<AliasSource, number> = { xem: 0, sceneMapping: 0, animeLists: 1, manual: 2, tmdb: 3 };
 
-/**
- * SearchKeys' `searchTitles`: the display title, then the aliases by source
- * rank, one per compact form. A name XEM lists under another scene season
- * than the Units' (a part's name) is left out.
- */
-function searchTitlesOf(display: string | undefined, aliases: Doc<'workAliases'>[], sceneSeasons: Set<number>): string[] {
+function searchedAs(reading: AliasReading, unitSeasons: Set<number>): boolean {
+  const { partSeason, filter } = reading;
+  if (filter !== undefined) return false;
+  return partSeason === undefined || (unitSeasons.has(partSeason.season) && releaseSeasonAllows(reading, partSeason.season));
+}
+
+function searchTitlesOf(display: string | undefined, aliases: Doc<'workAliases'>[], unitSeasons: Set<number>): string[] {
   const ranked = aliases
-    .filter((alias) => alias.sceneSeason === undefined || sceneSeasons.has(alias.sceneSeason))
+    .filter((alias) => searchedAs(readingOfStored(alias), unitSeasons))
     .sort((a, b) => SEARCH_TITLE_RANK[a.source] - SEARCH_TITLE_RANK[b.source])
     .map((alias) => alias.title);
   const seen = new Set<string>();
@@ -539,12 +551,6 @@ export async function searchKeys(ctx: QueryCtx, workId: Id<'works'>, unitIds: Id
 }
 
 // Internal query wrappers, for actions.
-
-export const findWorks = internalQuery({
-  args: zodToConvexFields({ normalizedTitle: z.string() }),
-  returns: zodToConvex(z.array(z.object({ workId: zid('works'), aliasId: zid('workAliases'), anidbId: z.number().optional() }))),
-  handler: (ctx, { normalizedTitle }) => findWorksByTitle(ctx, normalizedTitle),
-});
 
 export const resolve = internalQuery({
   args: zodToConvexFields({

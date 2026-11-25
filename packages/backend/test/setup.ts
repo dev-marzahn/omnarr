@@ -224,7 +224,20 @@ export type IndexerFake = (request: Request, init?: { signal?: AbortSignal }) =>
 /** GitHub's releases API as the update check reads it: the latest release, an error status, or no answer; `seen` collects each request's headers. */
 export type GithubFake = { latest?: { tag_name: string; html_url: string }; status?: number; down?: boolean; seen?: Headers[] };
 /** Sonarr's scene-mapping list as the fake serves it (the fixture unless `list` is given); `seen` collects each request's headers. */
-export type SceneMappingsFake = { list?: unknown; down?: boolean; seen?: Headers[] };
+export type SceneMappingsFake = { list?: unknown; down?: boolean; seen?: Headers[]; streamedBytes?: number };
+
+function streamWithoutLength(bytes: number): Response {
+  const chunk = new Uint8Array(1024 * 1024).fill(0x20);
+  let sent = 0;
+  const body = new ReadableStream<Uint8Array>({
+    pull(controller) {
+      if (sent >= bytes) return controller.close();
+      controller.enqueue(chunk);
+      sent += chunk.byteLength;
+    },
+  });
+  return new Response(body, { headers: { 'content-type': 'application/json' } });
+}
 export type MetadataFakes = Partial<TmdbFakeOptions> & {
   xem?: XemFake;
   animeLists?: AnimeListsFake;
@@ -284,6 +297,7 @@ export function useFetchFakes(options: MetadataFakes = {}): FakeRequests {
     if (url.hostname === 'services.sonarr.tv' && url.pathname === '/v1/scenemapping') {
       sceneMappings.seen?.push(request.headers);
       if (sceneMappings.down) return timeout();
+      if (sceneMappings.streamedBytes !== undefined) return streamWithoutLength(sceneMappings.streamedBytes);
       return Response.json(sceneMappings.list ?? sceneMappingList);
     }
     if (url.hostname === 'api.github.com' && url.pathname === '/repos/dev-marzahn/omnarr/releases/latest') {

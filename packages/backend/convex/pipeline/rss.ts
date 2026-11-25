@@ -127,9 +127,9 @@ export const matchPage = internalQuery({
 
     const byName = async (normalized: string) => {
       // A title that finds no Work may be one with a season mark (`Ember Rite S2`): the name before it is looked up.
-      let byTitle = (await findWorksByTitle(ctx, normalized)).map((m) => m.workId);
+      let byTitle = (await findWorksByTitle(ctx, normalized, 'releaseTitle')).map((m) => m.workId);
       const marked = byTitle.length === 0 ? splitSeasonMark(normalized) : undefined;
-      if (marked) byTitle = (await findWorksByTitle(ctx, marked.base)).map((m) => m.workId);
+      if (marked) byTitle = (await findWorksByTitle(ctx, marked.base, 'releaseTitle')).map((m) => m.workId);
       // Or one with a season's name (`JoJo's Bizarre Adventure Steel Ball Run`): matchTitle decides whether the rest is the Work's alias.
       return byTitle.length > 0 ? byTitle : await bySeasonName(normalized);
     };

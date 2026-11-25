@@ -153,7 +153,7 @@ export const identifyFolder = internalQuery({
       return { ...base, work: workId ? await refOfWork(ctx, workId) : null };
     }
     const works = new Set<Id<'works'>>();
-    for (const { workId } of await findWorksByTitle(ctx, base.normalizedTitle)) {
+    for (const { workId } of await findWorksByTitle(ctx, base.normalizedTitle, 'folderName')) {
       const work = await ctx.db.get(workId);
       if (work && work.kind === kind && work.libraryId === libraryId && sameYear(kind, parsed.year, work.year)) works.add(workId);
     }

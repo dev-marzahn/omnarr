@@ -196,7 +196,7 @@ describe("XEM's names in a sync", () => {
           .collect()
       )
         .filter((alias) => alias.source === 'xem')
-        .map(({ title, sceneSeason }) => ({ title, sceneSeason })),
+        .map(({ title, partSeason }) => ({ title, sceneSeason: partSeason?.season })),
     );
 
   test("a sync asks XEM only for the Work's map and takes its names from the daily fetch, each with its scene season", async () => {
@@ -389,6 +389,63 @@ describe('sync failures and limits', () => {
     expect((await stored(workId)).metadata?.seasonNames).toEqual(before);
   });
 
+  test("a scene-mapping name for a TVDB season reads in XEM's scene season for it, and while XEM is down the stored alias stays as XEM placed it", async () => {
+    const season6AsScene7 = {
+      ...jojoPartsShape,
+      data: jojoPartsShape.data.map((entry) => (entry.scene.season === 6 ? { ...entry, scene: { ...entry.scene, season: 7 } } : entry)),
+    };
+    await seedXemList(t, [7700009]);
+    await t.run((ctx) =>
+      ctx.db.insert('sceneMappings', { mappingId: 's-sbr', tvdbId: 7700009, title: 'JoJo SBR', tvdbSeason: 6, releaseSeason: 1, seenVersion: 'v1' }),
+    );
+    useMetadataFakes({ series: [...SERIES, jojoParts()], xem: { shows: { 7700009: { all: season6AsScene7, names: jojoPartsNames } } } });
+    await fetchXem(t);
+    const { workId } = await subscribe('900009', [5, 6]);
+    const sbr = async () =>
+      (
+        await t.run((ctx) =>
+          ctx.db
+            .query('workAliases')
+            .withIndex('by_work', (q) => q.eq('workId', workId))
+            .collect(),
+        )
+      )
+        .filter((alias) => alias.source === 'sceneMapping')
+        .map(({ title, partSeason, releaseSeason }) => ({ title, partSeason, releaseSeason }));
+    expect(await sbr()).toEqual([{ title: 'JoJo SBR', partSeason: { season: 7, ordering: 'scene' }, releaseSeason: 1 }]);
+
+    useMetadataFakes({ series: [...SERIES, jojoParts()], xem: { down: true } });
+    await t.action(internal.metadata.sync.syncWork, { workId });
+    expect(await sbr()).toEqual([{ title: 'JoJo SBR', partSeason: { season: 7, ordering: 'scene' }, releaseSeason: 1 }]);
+  });
+
+  test('syncs while XEM is down keep every alias once, a scene name placed by a season name included', async () => {
+    await seedXemList(t, [7700009]);
+    await t.run(async (ctx) => {
+      await ctx.db.insert('sceneMappings', { mappingId: 's-sbr', tvdbId: 7700009, title: 'JoJo SBR', tvdbSeason: 6, seenVersion: 'v1' });
+      await ctx.db.insert('sceneMappings', { mappingId: 's-split', tvdbId: 7700009, title: "JoJo's Bizarre Adventure Steel Ball Run", seenVersion: 'v1' });
+    });
+    useMetadataFakes({ series: [...SERIES, jojoParts()], xem: { shows: { 7700009: { all: jojoPartsShape, names: jojoPartsNames } } } });
+    await fetchXem(t);
+    const { workId } = await subscribe('900009', [5, 6]);
+    const aliasRows = () =>
+      t.run(async (ctx) =>
+        (
+          await ctx.db
+            .query('workAliases')
+            .withIndex('by_work', (q) => q.eq('workId', workId))
+            .collect()
+        ).map(({ source, normalized, partSeason }) => `${source}:${normalized}:${partSeason?.season ?? ''}`),
+      );
+    const before = await aliasRows();
+    expect(before).toContain('sceneMapping:jojos bizarre adventure steel ball run:6');
+
+    useMetadataFakes({ series: [...SERIES, jojoParts()], xem: { down: true } });
+    await t.action(internal.metadata.sync.syncWork, { workId });
+    await t.action(internal.metadata.sync.syncWork, { workId });
+    expect((await aliasRows()).sort()).toEqual(before.sort());
+  });
+
   test('a Work deleted while its sync runs makes every write a no-op', async () => {
     const { workId } = await subscribe('900001', [1]);
     await t.run(async (ctx) => {
@@ -404,7 +461,7 @@ describe('sync failures and limits', () => {
       workId,
       version: 9,
       cursor: null,
-      keepXem: { rows: false, aliases: false },
+      xemDown: { rows: false, names: false },
       aliases: [{ title: 'X', normalized: 'x', source: 'tmdb' }],
       fields: {
         title: 'X',

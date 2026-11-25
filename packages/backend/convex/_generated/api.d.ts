@@ -76,6 +76,7 @@ import type * as mapping_animeListsParse from "../mapping/animeListsParse.js";
 import type * as mapping_listStore from "../mapping/listStore.js";
 import type * as mapping_project from "../mapping/project.js";
 import type * as mapping_releaseName from "../mapping/releaseName.js";
+import type * as mapping_sceneMappingSeasons from "../mapping/sceneMappingSeasons.js";
 import type * as mapping_sceneMappings from "../mapping/sceneMappings.js";
 import type * as mapping_sceneMappingsParse from "../mapping/sceneMappingsParse.js";
 import type * as mapping_sources from "../mapping/sources.js";
@@ -97,6 +98,8 @@ import type * as migrations_0002_work_alias_compact from "../migrations/0002_wor
 import type * as migrations_0003_work_alias_scene_season from "../migrations/0003_work_alias_scene_season.js";
 import type * as migrations_0004_grab_kind from "../migrations/0004_grab_kind.js";
 import type * as migrations_0005_definition_yaml_table from "../migrations/0005_definition_yaml_table.js";
+import type * as migrations_0006_scene_mapping_seasons_and_filters from "../migrations/0006_scene_mapping_seasons_and_filters.js";
+import type * as migrations_0007_work_alias_part_season from "../migrations/0007_work_alias_part_season.js";
 import type * as migrations__generated from "../migrations/_generated.js";
 import type * as pipeline_backfill from "../pipeline/backfill.js";
 import type * as pipeline_blocklist from "../pipeline/blocklist.js";
@@ -211,6 +214,7 @@ declare const fullApi: ApiFromModules<{
   "mapping/listStore": typeof mapping_listStore;
   "mapping/project": typeof mapping_project;
   "mapping/releaseName": typeof mapping_releaseName;
+  "mapping/sceneMappingSeasons": typeof mapping_sceneMappingSeasons;
   "mapping/sceneMappings": typeof mapping_sceneMappings;
   "mapping/sceneMappingsParse": typeof mapping_sceneMappingsParse;
   "mapping/sources": typeof mapping_sources;
@@ -232,6 +236,8 @@ declare const fullApi: ApiFromModules<{
   "migrations/0003_work_alias_scene_season": typeof migrations_0003_work_alias_scene_season;
   "migrations/0004_grab_kind": typeof migrations_0004_grab_kind;
   "migrations/0005_definition_yaml_table": typeof migrations_0005_definition_yaml_table;
+  "migrations/0006_scene_mapping_seasons_and_filters": typeof migrations_0006_scene_mapping_seasons_and_filters;
+  "migrations/0007_work_alias_part_season": typeof migrations_0007_work_alias_part_season;
   "migrations/_generated": typeof migrations__generated;
   "pipeline/backfill": typeof pipeline_backfill;
   "pipeline/blocklist": typeof pipeline_blocklist;

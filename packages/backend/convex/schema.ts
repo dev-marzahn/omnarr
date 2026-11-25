@@ -3,6 +3,7 @@
 // literal unions are written once, here.
 import { vWorkflowId } from '@dev-marzahn/convex-workflow-migrations';
 import {
+  AliasReading,
   AliasSource,
   ApiLimit,
   BlocklistReason,
@@ -93,7 +94,7 @@ import { defineSchema, defineTable } from 'convex/server';
 import { v } from 'convex/values';
 
 import { AnimeListEntry } from './mapping/animeListsParse';
-import { SceneMappingEntry } from './mapping/sceneMappingsParse';
+import { StoredSceneMapping } from './mapping/sceneMappingsParse';
 import { XemShowNames } from './mapping/xemNamesParse';
 
 const protocol = v.union(v.literal('usenet'), v.literal('torrent'));
@@ -645,7 +646,7 @@ export default defineSchema({
     /** `normalized` without spaces (`compactTitle`), so a hyphen on either side still matches (migration 0001). */
     compact: v.string(),
     source: zodToConvex(AliasSource),
-    anidbId: v.optional(v.number()),
+    ...zodToConvexFields(AliasReading.shape),
     /** The scene season XEM lists the name under (a part's name); an absolute number after it is read in that season. */
     sceneSeason: v.optional(v.number()),
   })
@@ -677,9 +678,8 @@ export default defineSchema({
     .index('by_tmdb_tv', ['tmdbTvId'])
     .index('by_seen_version', ['seenVersion']),
 
-  // Sonarr's scene-mapping list, its all-seasons names only.
   sceneMappings: defineTable({
-    ...zodToConvexFields(SceneMappingEntry.shape),
+    ...zodToConvexFields(StoredSceneMapping.shape),
     seenVersion: v.string(),
   })
     .index('by_mapping', ['mappingId'])

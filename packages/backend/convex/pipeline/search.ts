@@ -3,6 +3,7 @@
 // its context, records candidates one page per mutation, and finishAttempt
 // picks.
 import {
+  AliasReading,
   CandidateReason,
   CandidateTorrent,
   DownloadProtocol,
@@ -41,7 +42,7 @@ import { appendEvent } from '../lib/events';
 import { CONVEX_ACTION_LIMIT_MS } from '../lib/limits';
 import { transition } from '../lib/stateMachine';
 import { resolveUnits, searchKeys } from '../metadata/resolve';
-import { workMetadataOf } from '../metadata/write';
+import { readingOfStored, workMetadataOf } from '../metadata/write';
 import { targetOf } from '../playback/target';
 import { keysForWork } from './blocklist';
 import { groupUnits, type GroupUnit, type SearchGroup } from './groups';
@@ -250,7 +251,7 @@ export const WorkForSearch = z.object({
   /** For the anime-only skip. */
   numberingScheme: NumberingScheme,
   year: z.number().optional(),
-  aliases: z.array(z.object({ aliasId: zid('workAliases'), normalized: z.string(), anidbId: z.number().optional(), sceneSeason: z.number().optional() })),
+  aliases: z.array(AliasReading.extend({ aliasId: zid('workAliases'), normalized: z.string() })),
   seasonNames: z.array(SeasonNameForMatch),
   ids: z.object({ tmdb: z.string(), tvdb: z.string().optional(), imdb: z.string().optional() }),
 });
@@ -307,14 +308,7 @@ export async function workForSearch(ctx: QueryCtx, work: Doc<'works'>): Promise<
     kind: work.kind,
     numberingScheme: work.numberingScheme,
     ...(work.year === undefined ? {} : { year: work.year }),
-    aliases: aliases
-      .sort((a, b) => linked(a) - linked(b))
-      .map((a) => ({
-        aliasId: a._id,
-        normalized: a.normalized,
-        ...(a.anidbId === undefined ? {} : { anidbId: a.anidbId }),
-        ...(a.sceneSeason === undefined ? {} : { sceneSeason: a.sceneSeason }),
-      })),
+    aliases: aliases.sort((a, b) => linked(a) - linked(b)).map((alias) => ({ aliasId: alias._id, normalized: alias.normalized, ...readingOfStored(alias) })),
     seasonNames: (metadata?.seasonNames ?? []).map(({ normalized, season, sceneSeason }) => ({ normalized, season, sceneSeason })),
     ids: { tmdb: id('tmdb') ?? '', ...(id('tvdb') ? { tvdb: id('tvdb') } : {}), ...(id('imdb') ? { imdb: id('imdb') } : {}) },
   };

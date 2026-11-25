@@ -2,7 +2,17 @@
 // then batched writes of Units, mapping rows and the Work's own rows. Every
 // write first checks that the Work still exists, so a sync racing a Work's
 // deletion writes nothing.
-import { AliasSource, type MappingSourceName, MappingStatus, NumberingReason, NumberingScheme, Ordering, SeasonName, UnitKind } from '@omnarr/contracts';
+import {
+  AliasReading,
+  AliasSource,
+  type MappingSourceName,
+  MappingStatus,
+  NumberingReason,
+  NumberingScheme,
+  Ordering,
+  SeasonName,
+  UnitKind,
+} from '@omnarr/contracts';
 import { compactTitle } from '@omnarr/parser';
 import { zid, zodToConvex, zodToConvexFields } from 'convex-helpers/server/zod4';
 import { z } from 'zod';
@@ -14,8 +24,10 @@ import { appendEvent } from '../lib/events';
 import { unitsRetitled } from '../library/naming';
 import { AnimeListEntry } from '../mapping/animeListsParse';
 import { chooseTvdbId } from '../mapping/project';
+import { SceneMappingName } from '../mapping/sceneMappingsParse';
 import { XemName } from '../mapping/xemNamesParse';
 import { startSearch } from '../pipeline/search';
+import { aliasIdentity } from './numbering';
 import { UnitMetadata } from './provider';
 
 const UnitChange = z.object({ from: z.string(), to: z.string() });
@@ -56,7 +68,7 @@ export const SnapshotInput = z.object({
   tvdbId: z.number().optional(),
   inXem: z.boolean(),
   /** Sonarr's scene-mapping names for that TVDB ID, as stored by the last good fetch. */
-  sceneMappings: z.array(z.string()),
+  sceneMappings: z.array(SceneMappingName),
   xemNames: z.array(XemName).optional(),
 });
 export type SnapshotInput = z.infer<typeof SnapshotInput>;
@@ -170,7 +182,7 @@ export const snapshotInput = internalQuery({
       animeListsVersion: animeLists?.version,
       tvdbId,
       inXem,
-      sceneMappings: sceneMappings.map((row) => row.title),
+      sceneMappings: sceneMappings.map((row) => SceneMappingName.parse(row)),
       xemNames,
     };
   },
@@ -411,7 +423,20 @@ export const applyMappings = internalMutation({
   },
 });
 
-const Alias = z.object({ title: z.string(), normalized: z.string(), source: AliasSource, anidbId: z.number().optional(), sceneSeason: z.number().optional() });
+const Alias = AliasReading.extend({ title: z.string(), normalized: z.string(), source: AliasSource });
+
+export const XemDown = z.object({ rows: z.boolean(), names: z.boolean() });
+export type XemDown = z.infer<typeof XemDown>;
+
+export const readingOfStored = ({ anidbId, partSeason, sceneSeason, releaseSeason, filter }: Doc<'workAliases'>): AliasReading => ({
+  anidbId,
+  partSeason: partSeason ?? (sceneSeason === undefined ? undefined : { season: sceneSeason, ordering: 'scene' }),
+  releaseSeason,
+  filter,
+});
+
+const keptWhileXemDown = (alias: Doc<'workAliases'>, xemDown: XemDown) =>
+  (xemDown.names && alias.source === 'xem') || (xemDown.rows && alias.source === 'sceneMapping' && readingOfStored(alias).partSeason !== undefined);
 
 /** What the last page of `finishWrite` writes on the Work. */
 export const WorkFields = z.object({
@@ -440,19 +465,18 @@ const PAGE = 500;
  * The end of a sync, one page per call: deletes the Work's non-manual
  * mapping rows from older versions; on the last page, writes the alias diff,
  * the Work's IDs and metadata, and marks the first write `ready`.
- * `keepXem` keeps the stored `xem` rows and XEM aliases (a failed XEM fetch).
  */
 export const finishWrite = internalMutation({
   args: zodToConvexFields({
     workId: zid('works'),
     version: z.number(),
     cursor: z.string().nullable(),
-    keepXem: z.object({ rows: z.boolean(), aliases: z.boolean() }),
+    xemDown: XemDown,
     aliases: z.array(Alias),
     fields: WorkFields,
   }),
   returns: zodToConvex(z.object({ done: z.boolean(), cursor: z.string().nullable() })),
-  handler: async (ctx, { workId, version, cursor, keepXem, aliases, fields }) => {
+  handler: async (ctx, { workId, version, cursor, xemDown, aliases, fields }) => {
     const work = await ctx.db.get(workId);
     const metadata = await workMetadataOf(ctx, workId);
     if (!work || !metadata) return { done: true, cursor: null };
@@ -462,22 +486,20 @@ export const finishWrite = internalMutation({
       .withIndex('by_ordering', (q) => q.eq('workId', workId))
       .paginate({ cursor, numItems: PAGE });
     for (const row of page.page) {
-      const stale = row.source !== 'manual' && (row.projectionVersion ?? 0) < version && !(keepXem.rows && row.source === 'xem');
+      const stale = row.source !== 'manual' && (row.projectionVersion ?? 0) < version && !(xemDown.rows && row.source === 'xem');
       if (stale) await ctx.db.delete(row._id);
     }
     if (!page.isDone) return { done: false, cursor: page.continueCursor };
 
-    // Aliases: the non-manual ones the sync no longer produces go; new ones come in. A changed scene season replaces the row.
-    const key = (a: { source: string; normalized: string; anidbId?: number; sceneSeason?: number }) =>
-      `${a.source}:${a.anidbId ?? ''}:${a.sceneSeason ?? ''}:${a.normalized}`;
-    const wanted = new Map(aliases.map((a) => [key(a), a]));
+    const wanted = new Map(aliases.map((a) => [aliasIdentity(a), a]));
     const current = await ctx.db
       .query('workAliases')
       .withIndex('by_work', (q) => q.eq('workId', workId))
       .collect();
     for (const alias of current) {
-      if (alias.source === 'manual' || (keepXem.aliases && alias.source === 'xem')) continue;
-      if (!wanted.delete(key(alias))) await ctx.db.delete(alias._id);
+      if (alias.source === 'manual') continue;
+      const stillWanted = wanted.delete(aliasIdentity({ ...readingOfStored(alias), source: alias.source, normalized: alias.normalized }));
+      if (!stillWanted && !keptWhileXemDown(alias, xemDown)) await ctx.db.delete(alias._id);
     }
     for (const alias of wanted.values()) await ctx.db.insert('workAliases', { workId, ...alias, compact: compactTitle(alias.normalized) });
 

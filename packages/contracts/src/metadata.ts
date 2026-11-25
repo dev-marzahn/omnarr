@@ -52,11 +52,22 @@ export type SeasonNameForMatch = z.infer<typeof SeasonNameForMatch>;
 export const PartSeasonOrdering = z.enum(['scene', 'tmdb']);
 export type PartSeasonOrdering = z.infer<typeof PartSeasonOrdering>;
 
+export const PartSeason = z.object({ season: z.number(), ordering: PartSeasonOrdering });
+export type PartSeason = z.infer<typeof PartSeason>;
+
+export const AliasReading = z.object({
+  anidbId: z.number().optional(),
+  partSeason: PartSeason.optional(),
+  releaseSeason: z.number().optional(),
+  filter: z.string().optional(),
+});
+export type AliasReading = z.infer<typeof AliasReading>;
+
 export const MatchedAlias = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('plain') }),
   z.object({ kind: z.literal('anidb'), anidbId: z.number() }),
   z.object({ kind: z.literal('namedSeason'), season: z.number() }),
-  z.object({ kind: z.literal('partSeason'), season: z.number(), ordering: PartSeasonOrdering }),
+  PartSeason.extend({ kind: z.literal('partSeason'), releaseSeason: z.number() }),
 ]);
 export type MatchedAlias = z.infer<typeof MatchedAlias>;
 

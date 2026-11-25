@@ -106,7 +106,7 @@ export const writeSceneMappings = internalMutation({
         .query('sceneMappings')
         .withIndex('by_mapping', (q) => q.eq('mappingId', entry.mappingId))
         .first();
-      if (existing && existing.tvdbId === entry.tvdbId && existing.title === entry.title) {
+      if (existing && existing.contentHash === entry.contentHash) {
         if (existing.seenVersion !== version) await ctx.db.patch(existing._id, { seenVersion: version });
         continue;
       }
@@ -190,18 +190,15 @@ export const recordSourceFetch = internalMutation({
     version: z.string().optional(),
     etag: z.string().optional(),
     xemTvdbIds: z.array(z.number()).optional(),
-    changedTvdbIds: z.array(z.number()).optional(),
   }),
   returns: zodToConvex(z.null()),
-  handler: async (ctx, { source, version, etag, xemTvdbIds, changedTvdbIds }) => {
+  handler: async (ctx, { source, version, etag, xemTvdbIds }) => {
     const now = Date.now();
     const state = await stateOf(ctx, source);
     const fields = { ...(version !== undefined ? { version } : {}), ...(etag !== undefined ? { etag } : {}), ...(xemTvdbIds ? { xemTvdbIds } : {}) };
     if (state) await ctx.db.patch(state._id, fields);
     else await ctx.db.insert('mappingSourceState', { source, lastAttemptAt: now, ...fields });
     await recordHealthIn(ctx, { source, outcome: 'success', at: now });
-
-    await resyncWorks(ctx, { tvdbIds: changedTvdbIds });
     return null;
   },
 });

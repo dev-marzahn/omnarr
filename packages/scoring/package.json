@@ -12,7 +12,8 @@
   },
   "dependencies": {
     "@omnarr/contracts": "workspace:*",
-    "@omnarr/parser": "workspace:*"
+    "@omnarr/parser": "workspace:*",
+    "re2js": "catalog:"
   },
   "devDependencies": {
     "@types/node": "catalog:",

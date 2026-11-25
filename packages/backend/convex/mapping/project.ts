@@ -23,6 +23,11 @@ export type MappingRow = {
   sourceVersion?: string;
 };
 
+export type UnitSeason = { tmdbId?: string; tmdbSeason?: number };
+
+export const tmdbSeasonOf = (units: UnitSeason[]): Map<string, number> =>
+  new Map(units.flatMap((unit) => (unit.tmdbId && unit.tmdbSeason !== undefined ? [[unit.tmdbId, unit.tmdbSeason] as const] : [])));
+
 export type ProjectInput = {
   units: ProjectUnit[];
   /** The Absolute group's order, when one is used (`selectAbsoluteOrder`); else TMDB order. */

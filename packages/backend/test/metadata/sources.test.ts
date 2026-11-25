@@ -1,8 +1,10 @@
 // The mapping sources: the daily Anime-Lists and XEM `havemap`
 // fetches, their health and Issues, and the syncs they start.
+import { runToCompletion } from '@convex-dev/migrations';
+import migrationsComponent from '@convex-dev/migrations/test';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vite-plus/test';
 
-import { api, internal } from '../../convex/_generated/api';
+import { api, components, internal } from '../../convex/_generated/api';
 import type { Id } from '../../convex/_generated/dataModel';
 import xml from '../fixtures/animeLists/anime-list.xml?raw';
 import blackLagoonShape from '../fixtures/xem/blackLagoonShape.json';
@@ -60,7 +62,7 @@ const openIssues = () =>
 describe('the first tick', () => {
   test("fetches Anime-Lists, the XEM list and Sonarr's scene mappings, and not again within 24 hours", async () => {
     expect(await entries()).toHaveLength(7);
-    expect(await t.run((ctx) => ctx.db.query('sceneMappings').collect())).toHaveLength(3);
+    expect(await t.run((ctx) => ctx.db.query('sceneMappings').collect())).toHaveLength(6);
     const settings = await admin.query(api.api.metadata.settings, {});
     expect(settings.sources.find((s) => s.name === 'animeLists')).toMatchObject({
       version: expect.stringMatching(/^[0-9a-f]{64}$/),
@@ -155,7 +157,7 @@ describe("XEM's names, the xemNames source", () => {
           .collect()
       )
         .filter((alias) => alias.source === 'xem')
-        .map(({ title, sceneSeason }) => ({ title, sceneSeason })),
+        .map(({ title, partSeason }) => ({ title, sceneSeason: partSeason?.season })),
     );
   const storedNames = () =>
     t.run(async (ctx) => (await ctx.db.query('xemNames').collect()).map(({ tvdbId, names, seenVersion }) => ({ tvdbId, names, seenVersion })));
@@ -333,12 +335,80 @@ describe("Sonarr's scene mappings", () => {
   const aliasesOf = async (workId: Id<'works'>) =>
     (await admin.query(api.api.metadata.workInfo, { workId }))!.aliases.filter((a) => a.source === 'sceneMapping').map((a) => a.title);
   const fetchSceneMappings = () => t.action(internal.mapping.sceneMappings.fetchSceneMappings, {});
-  const list = (entries: { mappingId: string; tvdbId: number; title: string; season?: number }[]) => entries.map((e) => ({ season: -1, ...e }));
+  const list = (entries: { mappingId: string; tvdbId: number; title: string; season?: number; filterRegex?: string }[]) =>
+    entries.map((e) => ({ season: -1, ...e }));
 
-  test('a subscribed Work gets its all-seasons names as aliases, by its TVDB ID', async () => {
+  const sceneAliasRows = (workId: Id<'works'>) =>
+    t.run(async (ctx) =>
+      (
+        await ctx.db
+          .query('workAliases')
+          .withIndex('by_work', (q) => q.eq('workId', workId))
+          .collect()
+      )
+        .filter((alias) => alias.source === 'sceneMapping')
+        .map(({ title, partSeason, releaseSeason, filter }) => ({ title, partSeason, releaseSeason, filter })),
+    );
+
+  test("a subscribed Work gets its names as aliases by its TVDB ID, with their season and filter; a season TMDB doesn't list leaves its name out", async () => {
     const { workId } = await subscribe('900001');
     await runPool();
-    expect(await aliasesOf(workId)).toEqual(['Harbour Lights UK', 'The Harbour Lights']);
+    expect(await sceneAliasRows(workId)).toEqual([
+      { title: 'Harbour Lights UK' },
+      { title: 'The Harbour Lights' },
+      { title: 'Harbour Lights Winter Tales', partSeason: { season: 0, ordering: 'tmdb' }, releaseSeason: 0 },
+      { title: 'Harbour', filter: '(?i)^Harbour\\.S01E' },
+    ]);
+  });
+
+  test('a name stored before seasons and filters were kept still reads; after migration 0006 the next fetch of the same list rewrites it with them', async () => {
+    migrationsComponent.register(t);
+    await t.run(async (ctx) => {
+      for (const row of await ctx.db.query('sceneMappings').collect()) await ctx.db.delete(row._id);
+      await ctx.db.insert('sceneMappings', { mappingId: 's-0000000000000000000000a1', tvdbId: 7700001, title: 'Harbour Lights UK', seenVersion: 'old' });
+    });
+    const { workId } = await subscribe('900001');
+    await runPool();
+    expect(await sceneAliasRows(workId)).toEqual([{ title: 'Harbour Lights UK' }]);
+    await fetchSceneMappings();
+    expect(await syncing(workId)).toBe(false);
+
+    await t.run((ctx) => runToCompletion(ctx, components.migrations, internal.migrations['0006_scene_mapping_seasons_and_filters'].default));
+    await fetchSceneMappings();
+    expect(await syncing(workId)).toBe(true);
+    await runPool();
+    expect((await sceneAliasRows(workId)).map((alias) => alias.title)).toEqual([
+      'Harbour Lights UK',
+      'The Harbour Lights',
+      'Harbour Lights Winter Tales',
+      'Harbour',
+    ]);
+  });
+
+  test("an entry with a pattern RE2 can't read is skipped, and the rest of the list is stored", async () => {
+    useMetadataFakes({
+      sceneMappings: {
+        list: list([
+          { mappingId: 's-bad', tvdbId: 7700001, title: 'Harbour Lights Lookbehind', filterRegex: '(?<=x)y' },
+          { mappingId: 's-good', tvdbId: 7700001, title: 'Harbour Lights GB' },
+        ]),
+      },
+    });
+    await fetchSceneMappings();
+    expect((await t.run((ctx) => ctx.db.query('sceneMappings').collect())).map((row) => row.mappingId)).toEqual(['s-good']);
+  });
+
+  test('a name whose season changed syncs its Work, and the alias carries the new season', async () => {
+    const harbour = await subscribe('900001');
+    await runPool();
+    const entry = { mappingId: 's-0000000000000000000000a3', tvdbId: 7700001, title: 'Harbour Lights Winter Tales' };
+    useMetadataFakes({ sceneMappings: { list: list([{ ...entry, season: 1 }]) } });
+    await fetchSceneMappings();
+    expect(await syncing(harbour.workId)).toBe(true);
+    await runPool();
+    expect(await sceneAliasRows(harbour.workId)).toEqual([
+      { title: 'Harbour Lights Winter Tales', partSeason: { season: 1, ordering: 'tmdb' }, releaseSeason: 1 },
+    ]);
   });
 
   test('sends the omnarr User-Agent', async () => {
@@ -368,6 +438,13 @@ describe("Sonarr's scene mappings", () => {
     expect(await aliasesOf(northbound.workId)).toEqual(['Northbound Signal US']);
   });
 
+  test('a body past 16 MB with no length header is refused while it streams, and the stored names stay', async () => {
+    const before = await t.run((ctx) => ctx.db.query('sceneMappings').collect());
+    useMetadataFakes({ sceneMappings: { streamedBytes: 17 * 1024 * 1024 } });
+    await expect(fetchSceneMappings()).rejects.toThrow("Sonarr's scene mappings is too large.");
+    expect(await t.run((ctx) => ctx.db.query('sceneMappings').collect())).toEqual(before);
+  });
+
   test('a failed fetch keeps the stored names for the next sync, and counts toward the source health', async () => {
     const { workId } = await subscribe('900001');
     await runPool();
@@ -377,7 +454,7 @@ describe("Sonarr's scene mappings", () => {
     await expect(fetchSceneMappings()).rejects.toThrow();
     await admin.mutation(api.api.metadata.syncNow, { workId });
     await runPool();
-    expect(await aliasesOf(workId)).toEqual(['Harbour Lights UK', 'The Harbour Lights']);
+    expect(await aliasesOf(workId)).toEqual(['Harbour Lights UK', 'The Harbour Lights', 'Harbour Lights Winter Tales', 'Harbour']);
     const health = (await admin.query(api.api.metadata.settings, {})).sources.find((s) => s.name === 'sceneMapping')!;
     expect(health.firstFailureAt).toEqual(expect.any(Number));
   });
