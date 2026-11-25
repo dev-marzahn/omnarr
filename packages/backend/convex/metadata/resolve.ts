@@ -2,7 +2,17 @@
 // names, the Units its numbers name, and the keys a search is sent with.
 // Each is a plain function for mutations and queries, with an internal query
 // wrapper for actions. All of them only read.
-import { type AliasSource, type Confidence, ParsedEpisode, ResolveOrdering, ResolveResult, SearchKeys, type UnitRef } from '@omnarr/contracts';
+import {
+  type AliasSource,
+  type Confidence,
+  MatchedAlias,
+  ParsedEpisode,
+  type PartSeasonOrdering,
+  ResolveOrdering,
+  ResolveResult,
+  SearchKeys,
+  type UnitRef,
+} from '@omnarr/contracts';
 import { compactTitle, normalizeTitle } from '@omnarr/parser';
 import { zid, zodToConvex, zodToConvexFields } from 'convex-helpers/server/zod4';
 import { z } from 'zod';
@@ -220,14 +230,16 @@ async function byAbsolute(
 }
 
 /** Whether TMDB, a `scene` row or a `tvdb` row puts the Unit in this season. */
-async function inSeason(ctx: QueryCtx, unitId: Id<'units'>, season: number): Promise<boolean> {
-  if ((await ctx.db.get(unitId))?.tmdbSeason === season) return true;
-  const rows = await ctx.db
-    .query('unitMappings')
-    .withIndex('by_unit', (q) => q.eq('unitId', unitId))
-    .collect();
-  return rows.some((row) => (row.ordering === 'scene' || row.ordering === 'tvdb') && row.season === season);
-}
+const inSeason =
+  (ctx: QueryCtx, season: number) =>
+  async (unitId: Id<'units'>): Promise<boolean> => {
+    if ((await ctx.db.get(unitId))?.tmdbSeason === season) return true;
+    const rows = await ctx.db
+      .query('unitMappings')
+      .withIndex('by_unit', (q) => q.eq('unitId', unitId))
+      .collect();
+    return rows.some((row) => (row.ordering === 'scene' || row.ordering === 'tvdb') && row.season === season);
+  };
 
 /**
  * Rule 4 for a title that names a season (`Ember Rite S2 - 02`):
@@ -241,6 +253,7 @@ async function byNamedSeason(
   season: number,
   episodes: ParsedEpisode[],
   allowed: Allowed,
+  keep: (unitId: Id<'units'>) => Promise<boolean>,
 ): Promise<Found | Ambiguous | null> {
   const numbers = episodes.filter((e) => e.absolute !== undefined);
   const within = await bySeasonEpisode(
@@ -249,7 +262,7 @@ async function byNamedSeason(
     numbers.map((e) => ({ season, episode: e.absolute })),
     allowed,
   );
-  const absolute = await byAbsolute(ctx, workId, numbers, allowed, (unitId) => inSeason(ctx, unitId, season));
+  const absolute = await byAbsolute(ctx, workId, numbers, allowed, keep);
   if (isAmbiguous(absolute)) return ambiguous(absolute, anyFound(within) ? within : null);
   const byNumber = within && complete(within) ? within : null;
   const byAbsoluteNumber = absolute && complete(absolute) ? absolute : null;
@@ -293,41 +306,55 @@ async function bySceneSeason(
   return { perNumber, via: { ordering: 'scene', source }, confidence: 'mapped' };
 }
 
-/**
- * Rule 3 for a title that matched an alias XEM lists under scene season S
- * (`Stone Ocean S01E05`): season S, or season 1 (a
- * group numbering the part as its own season, as Sonarr reads XEM's names),
- * is read as scene season S, in its `scene` rows only. Any other season
- * contradicts the name, so the release is `ambiguous`. An absolute number
- * beside it must name the same Units (rule 5).
- */
+type PartSeasonReading = {
+  orderings: (allowed: Allowed) => Allowed;
+  byAbsolute: (ctx: QueryCtx, workId: Id<'works'>, season: number, episodes: ParsedEpisode[], inPart: Allowed) => Promise<Found | Ambiguous | null>;
+  unclearAs: Partial<Pick<ResolveResult, 'via' | 'confidence'>>;
+};
+
+type PartSeason = { season: number; reading: PartSeasonReading; inPart: Allowed };
+
+const partSeason = (season: number, reading: PartSeasonReading, allowed: Allowed): PartSeason => ({ season, reading, inPart: reading.orderings(allowed) });
+
+const VIA_SCENE = { via: { ordering: 'scene', source: 'xem' }, confidence: 'mapped' } as const;
+
+const inTmdbSeason = (ctx: QueryCtx, season: number) => async (unitId: Id<'units'>) => (await ctx.db.get(unitId))?.tmdbSeason === season;
+
+const PART_SEASON_READINGS: Record<PartSeasonOrdering, PartSeasonReading> = {
+  scene: {
+    orderings: (allowed) => (ordering) => ordering === 'scene' && allowed(ordering),
+    byAbsolute: bySceneSeason,
+    unclearAs: VIA_SCENE,
+  },
+  tmdb: {
+    orderings: (allowed) => (ordering) => (ordering === 'tmdb' || ordering === 'absolute') && allowed(ordering),
+    byAbsolute: (ctx, workId, season, episodes, inPart) => byNamedSeason(ctx, workId, season, episodes, inPart, inTmdbSeason(ctx, season)),
+    unclearAs: {},
+  },
+};
+
 async function byPartSeason(
   ctx: QueryCtx,
   workId: Id<'works'>,
-  sceneSeason: number,
+  part: PartSeason,
   episodes: ParsedEpisode[],
   allowed: Allowed,
 ): Promise<Found | Ambiguous | null> {
+  const { season, reading, inPart } = part;
   const numbers = episodes.filter((e) => e.season !== undefined);
-  const inPart = (found: Found | null) => (found && complete(found) ? found : null);
+  const ifComplete = (found: Found | null) => (found && complete(found) ? found : null);
   const partReading = () =>
     bySeasonEpisode(
       ctx,
       workId,
-      numbers.map((e) => ({ season: sceneSeason, episode: e.episode })),
-      (ordering) => ordering === 'scene' && allowed(ordering),
+      numbers.map((e) => ({ season, episode: e.episode })),
+      inPart,
     );
-  // The name says one part, the season another: either reading may be right.
-  if (numbers.some((e) => e.season !== sceneSeason && e.season !== 1))
-    return ambiguous(inPart(await partReading()), inPart(await bySeasonEpisode(ctx, workId, numbers, allowed)));
-  const found = await bySeasonEpisode(
-    ctx,
-    workId,
-    numbers.map((e) => ({ season: sceneSeason, episode: e.episode })),
-    (ordering) => ordering === 'scene' && allowed(ordering),
-  );
+  const nameAndSeasonDisagree = numbers.some((e) => e.season !== season && e.season !== 1);
+  if (nameAndSeasonDisagree) return ambiguous(ifComplete(await partReading()), ifComplete(await bySeasonEpisode(ctx, workId, numbers, allowed)));
+  const found = await partReading();
   if (found && complete(found) && episodes.some((e) => e.absolute !== undefined)) {
-    const absolute = await bySceneSeason(ctx, workId, sceneSeason, episodes, allowed);
+    const absolute = await reading.byAbsolute(ctx, workId, season, episodes, inPart);
     if (isAmbiguous(absolute) || (absolute && complete(absolute) && !sameUnits(flat(absolute), flat(found)))) return ambiguous(found, absolute);
   }
   return found;
@@ -339,9 +366,6 @@ const sameUnits = (a: Id<'units'>[], b: Id<'units'>[]) => a.length === b.length 
 /**
  * The Units a release's numbers name, by the first rule that finds any:
  * air date, the alias's AniDB ordering, season and episode, absolute numbers.
- * `alias` is what the title matched (matchTitle): the alias's AniDB
- * entry, a season the title names after the alias, and the
- * scene season XEM lists the alias under.
  * `orderings` limits rules 3 and 4 to those orderings, for the scan, which
  * tries one numbering at a time.
  * Retired Units are never returned.
@@ -350,8 +374,8 @@ export async function resolveUnits(
   ctx: QueryCtx,
   workId: Id<'works'>,
   episodes: ParsedEpisode[],
-  airDate?: string,
-  alias?: { anidbId?: number; season?: number; sceneSeason?: number },
+  airDate: string | undefined,
+  alias: MatchedAlias,
   options: { orderings?: ResolveOrdering[] } = {},
 ): Promise<ResolveResult> {
   const allowed: Allowed = options.orderings ? (ordering) => (options.orderings as string[]).includes(ordering) : allOrderings;
@@ -367,7 +391,6 @@ export async function resolveUnits(
     problem: 'ambiguous',
     ...(found.ambiguous.length > 0 ? { possibleUnitIds: found.ambiguous } : {}),
   });
-  const viaScene = { via: { ordering: 'scene', source: 'xem' }, confidence: 'mapped' } as const;
 
   // A movie is one Unit; its release names no numbers.
   if (work.kind === 'movie') {
@@ -387,15 +410,17 @@ export async function resolveUnits(
     if (found) return answer(found);
   }
 
-  if (alias?.anidbId !== undefined) {
-    const found = await byAnidb(ctx, workId, alias.anidbId, episodes);
+  const anidbId = alias.kind === 'anidb' ? alias.anidbId : undefined;
+  if (anidbId !== undefined) {
+    const found = await byAnidb(ctx, workId, anidbId, episodes);
     if (anyFound(found)) return answer(found);
   }
 
+  const part = alias.kind === 'partSeason' ? partSeason(alias.season, PART_SEASON_READINGS[alias.ordering], allowed) : undefined;
   // A part's name with season numbers: read within the part, never as another season.
-  if (alias?.sceneSeason !== undefined && episodes.some((e) => e.season !== undefined)) {
-    const found = await byPartSeason(ctx, workId, alias.sceneSeason, episodes, allowed);
-    if (isAmbiguous(found)) return unclear(found, viaScene);
+  if (part && episodes.some((e) => e.season !== undefined)) {
+    const found = await byPartSeason(ctx, workId, part, episodes, allowed);
+    if (isAmbiguous(found)) return unclear(found, part.reading.unclearAs);
     return found ? answer(found) : none;
   }
 
@@ -414,29 +439,29 @@ export async function resolveUnits(
 
   if (hasAbsolute) {
     if (!anime) return { ...none, problem: 'schemeMismatch' };
-    if (alias?.season !== undefined) {
-      const found = await byNamedSeason(ctx, workId, alias.season, episodes, allowed);
+    if (alias.kind === 'namedSeason') {
+      const found = await byNamedSeason(ctx, workId, alias.season, episodes, allowed, inSeason(ctx, alias.season));
       if (isAmbiguous(found)) return unclear(found);
       return found ? answer(found) : none;
     }
-    if (alias?.sceneSeason !== undefined) {
-      const found = await bySceneSeason(ctx, workId, alias.sceneSeason, episodes, allowed);
-      if (isAmbiguous(found)) return unclear(found, viaScene);
+    if (part) {
+      const found = await part.reading.byAbsolute(ctx, workId, part.season, episodes, part.inPart);
+      if (isAmbiguous(found)) return unclear(found, part.reading.unclearAs);
       return found ? answer(found) : none;
     }
     // The alias names an AniDB entry, so an absolute number must land on one of its Units: only their rows count.
     let entryUnits: Set<Id<'units'>> | undefined;
-    if (alias?.anidbId !== undefined)
+    if (anidbId !== undefined)
       entryUnits = new Set(
         (
           await ctx.db
             .query('unitMappings')
-            .withIndex('by_ordering', (q) => q.eq('workId', workId).eq('ordering', `anidb:${alias.anidbId}`))
+            .withIndex('by_ordering', (q) => q.eq('workId', workId).eq('ordering', `anidb:${anidbId}`))
             .collect()
         ).map((row) => row.unitId),
       );
     const absolute = await byAbsolute(ctx, workId, episodes, allowed, entryUnits ? (unitId) => entryUnits.has(unitId) : undefined);
-    if (isAmbiguous(absolute)) return unclear(absolute, viaScene);
+    if (isAmbiguous(absolute)) return unclear(absolute, VIA_SCENE);
     if (absolute && entryUnits) return answer(absolute);
     if (anyFound(absolute)) return answer(absolute);
   }
@@ -526,7 +551,7 @@ export const resolve = internalQuery({
     workId: zid('works'),
     episodes: z.array(ParsedEpisode),
     airDate: z.string().optional(),
-    alias: z.object({ anidbId: z.number().optional(), season: z.number().optional(), sceneSeason: z.number().optional() }).optional(),
+    alias: MatchedAlias,
     orderings: z.array(ResolveOrdering).optional(),
   }),
   returns: zodToConvex(ResolveResult),

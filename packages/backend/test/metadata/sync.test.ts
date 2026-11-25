@@ -1,4 +1,4 @@
-import { harbourLightsRestructured, longSeries, SERIES } from '@omnarr/e2e/fakes/tmdb/fixtures';
+import { harbourLightsRestructured, jojoParts, longSeries, SERIES } from '@omnarr/e2e/fakes/tmdb/fixtures';
 // The write path through library.subscribe and syncWork, with
 // TMDB, XEM and Anime-Lists behind fakes. Mapping rows and external IDs have
 // no public reader of their own, so these tests read the tables.
@@ -23,6 +23,8 @@ vi.mock('../../convex/metadata/reconcile', async (importOriginal) => {
 });
 import { seedFile } from '../fakePrepare';
 import blackLagoonShape from '../fixtures/xem/blackLagoonShape.json';
+import jojoPartsNames from '../fixtures/xem/jojoPartsNames.json';
+import jojoPartsShape from '../fixtures/xem/jojoPartsShape.json';
 import partial from '../fixtures/xem/partial.json';
 import { asAdmin, seedAnimeLists, seedLibraries, seedXemList, setup, useMetadataFakes, type Backend, type Libraries } from '../setup';
 
@@ -334,6 +336,21 @@ describe('sync failures and limits', () => {
     });
   });
 
+  test("a XEM timeout keeps the stored season names, whose scene seasons come from XEM's rows", async () => {
+    const season6AsScene7 = {
+      ...jojoPartsShape,
+      data: jojoPartsShape.data.map((entry) => (entry.scene.season === 6 ? { ...entry, scene: { ...entry.scene, season: 7 } } : entry)),
+    };
+    await seedXemList(t, [7700009]);
+    useMetadataFakes({ series: [...SERIES, jojoParts()], xem: { shows: { 7700009: { all: season6AsScene7, names: jojoPartsNames } } } });
+    const { workId } = await subscribe('900009', [5, 6]);
+    const before = (await stored(workId)).metadata?.seasonNames;
+    expect(before).toContainEqual(expect.objectContaining({ season: 6, sceneSeason: 7 }));
+    useMetadataFakes({ series: [...SERIES, jojoParts()], xem: { down: true } });
+    await t.action(internal.metadata.sync.syncWork, { workId });
+    expect((await stored(workId)).metadata?.seasonNames).toEqual(before);
+  });
+
   test('a Work deleted while its sync runs makes every write a no-op', async () => {
     const { workId } = await subscribe('900001', [1]);
     await t.run(async (ctx) => {
@@ -426,6 +443,21 @@ describe('sync failures and limits', () => {
   test('a successful first write at subscribe forgets the ticked seasons', async () => {
     const { workId } = await subscribe('900001', [2]);
     expect((await stored(workId)).metadata).not.toHaveProperty('initialSeasons');
+  });
+});
+
+describe('season names', () => {
+  test('a series XEM does not list names each named season, with no scene season', async () => {
+    useMetadataFakes({ series: [...SERIES, jojoParts()] });
+    const { workId } = await subscribe('900009', [5, 6]);
+    expect((await stored(workId)).metadata?.seasonNames).toEqual([
+      { season: 1, name: 'Phantom Blood & Battle Tendency', normalized: 'phantom blood and battle tendency' },
+      { season: 2, name: 'Stardust Crusaders', normalized: 'stardust crusaders' },
+      { season: 3, name: 'Diamond Is Unbreakable', normalized: 'diamond is unbreakable' },
+      { season: 4, name: 'Golden Wind', normalized: 'golden wind' },
+      { season: 5, name: 'Stone Ocean', normalized: 'stone ocean' },
+      { season: 6, name: 'Steel Ball Run', normalized: 'steel ball run' },
+    ]);
   });
 });
 

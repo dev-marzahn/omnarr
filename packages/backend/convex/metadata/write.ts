@@ -3,6 +3,7 @@
 // write first checks that the Work still exists, so a sync racing a Work's
 // deletion writes nothing.
 import { AliasSource, MappingStatus, NumberingReason, NumberingScheme, Ordering, UnitKind } from '@omnarr/contracts';
+import { SeasonName } from '@omnarr/contracts';
 import { compactTitle } from '@omnarr/parser';
 import { zid, zodToConvex, zodToConvexFields } from 'convex-helpers/server/zod4';
 import { z } from 'zod';
@@ -18,9 +19,6 @@ import { startSearch } from '../pipeline/search';
 import { UnitMetadata } from './provider';
 
 const UnitChange = z.object({ from: z.string(), to: z.string() });
-
-/** A named TMDB season (`workMetadata.seasonNames`): its number, TMDB's name, the normalized name and its one scene season. */
-const SeasonName = z.object({ season: z.number(), name: z.string(), normalized: z.string(), sceneSeason: z.number() });
 
 /** What `snapshotInput` gives a sync: the Work, its Units with their TMDB episode IDs, manual rows and Anime-Lists entries. */
 export const SnapshotInput = z.object({
@@ -415,7 +413,6 @@ export const WorkFields = z.object({
   numberingSuggestion: z.object({ scheme: NumberingScheme, reason: NumberingReason }),
   mappingStatus: MappingStatus,
   mappingNotes: z.array(z.string()),
-  /** A series' named TMDB seasons with their scene seasons (`numbering.seasonNames`). */
   seasonNames: z.array(SeasonName).optional(),
   nextSyncAt: z.number(),
   /** The Work's `tvdb`, `imdb` and `anidb` IDs; its `tmdb` ID never changes. */

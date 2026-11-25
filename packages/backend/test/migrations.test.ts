@@ -92,7 +92,9 @@ describe('0003: Works with XEM aliases sync again, so the aliases get their scen
     const stoneOcean = () =>
       t.run(async (ctx) => {
         const alias = (await ctx.db.query('workAliases').collect()).find((a) => a.normalized === 'jojos bizarre adventure stone ocean')!;
-        const result = await resolveUnits(ctx, workId, [{ absolute: 1 }], undefined, { sceneSeason: alias.sceneSeason });
+        const matched =
+          alias.sceneSeason === undefined ? ({ kind: 'plain' } as const) : ({ kind: 'partSeason', season: alias.sceneSeason, ordering: 'scene' } as const);
+        const result = await resolveUnits(ctx, workId, [{ absolute: 1 }], undefined, matched);
         return Promise.all(result.unitIds.map(async (id) => (await ctx.db.get(id))!.tmdbSeason));
       });
 

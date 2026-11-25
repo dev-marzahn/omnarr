@@ -297,7 +297,7 @@ const label = (unit: Doc<'units'>): ScanUnitLabel => ({
 /** Reads a file's numbers in one ordering: through resolveUnits for a Work in the library, else against TMDB's snapshot. */
 async function readIn(ctx: MutationCtx, input: FolderInput, ordering: z.infer<typeof ScanNumbering>, episodes: ParsedEpisode[]): Promise<Reading> {
   if (input.work?.workId) {
-    const result = await resolveUnits(ctx, input.work.workId, episodes, undefined, undefined, { orderings: [ordering] });
+    const result = await resolveUnits(ctx, input.work.workId, episodes, undefined, { kind: 'plain' }, { orderings: [ordering] });
     if (result.problem || result.unitIds.length === 0) return null;
     const units = (await Promise.all(result.unitIds.map((id) => ctx.db.get(id)))).filter((unit) => unit !== null);
     return { unitIds: result.unitIds, units: units.map(label) };

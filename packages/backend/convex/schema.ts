@@ -87,6 +87,7 @@ import {
   WorkKind,
 } from '@omnarr/contracts';
 import { ScanCounts, ScanItemStatus, ScanMatch, ScanRunState, ScanSchedule, ScanSuggestion, ScanTrigger, UnmatchedReason } from '@omnarr/contracts';
+import { SeasonName } from '@omnarr/contracts';
 import { zodToConvex, zodToConvexFields } from 'convex-helpers/server/zod4';
 import { defineSchema, defineTable } from 'convex/server';
 import { v } from 'convex/values';
@@ -595,8 +596,7 @@ export default defineSchema({
     numberingSuggestion: v.optional(v.object({ scheme: zodToConvex(NumberingScheme), reason: zodToConvex(NumberingReason) })),
     mappingStatus: v.optional(zodToConvex(MappingStatus)),
     mappingNotes: v.array(v.string()),
-    /** The series' named TMDB seasons, each with its one scene season: `<alias> <season name>` reads that scene season. */
-    seasonNames: v.optional(v.array(v.object({ season: v.number(), name: v.string(), normalized: v.string(), sceneSeason: v.number() }))),
+    seasonNames: v.optional(v.array(zodToConvex(SeasonName))),
     projectionVersion: v.number(),
     nextSyncAt: v.number(),
     syncWorkId: v.optional(v.string()),

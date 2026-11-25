@@ -16,6 +16,7 @@ import {
   NumberingScheme,
   IndexerUsageHour,
   ApiLimit,
+  MatchedAlias,
   ParsedEpisode,
   ParsedRelease,
   QualityId,
@@ -24,6 +25,7 @@ import {
   ResolveResult,
   ScoreBreakdown,
   SearchGroupKind,
+  SeasonNameForMatch,
   SearchKeys,
   TargetFormat,
 } from '@omnarr/contracts';
@@ -249,8 +251,7 @@ export const WorkForSearch = z.object({
   numberingScheme: NumberingScheme,
   year: z.number().optional(),
   aliases: z.array(z.object({ aliasId: zid('workAliases'), normalized: z.string(), anidbId: z.number().optional(), sceneSeason: z.number().optional() })),
-  /** The named TMDB seasons with their scene seasons, for `<alias> <season name>`. */
-  seasonNames: z.array(z.object({ normalized: z.string(), sceneSeason: z.number() })),
+  seasonNames: z.array(SeasonNameForMatch),
   ids: z.object({ tmdb: z.string(), tvdb: z.string().optional(), imdb: z.string().optional() }),
 });
 
@@ -314,7 +315,7 @@ export async function workForSearch(ctx: QueryCtx, work: Doc<'works'>): Promise<
         ...(a.anidbId === undefined ? {} : { anidbId: a.anidbId }),
         ...(a.sceneSeason === undefined ? {} : { sceneSeason: a.sceneSeason }),
       })),
-    seasonNames: (metadata?.seasonNames ?? []).map(({ normalized, sceneSeason }) => ({ normalized, sceneSeason })),
+    seasonNames: (metadata?.seasonNames ?? []).map(({ normalized, season, sceneSeason }) => ({ normalized, season, sceneSeason })),
     ids: { tmdb: id('tmdb') ?? '', ...(id('tvdb') ? { tvdb: id('tvdb') } : {}), ...(id('imdb') ? { imdb: id('imdb') } : {}) },
   };
 }
@@ -394,9 +395,7 @@ export const context = internalQuery({
 export const ResolveItem = z.object({
   episodes: z.array(ParsedEpisode),
   airDate: z.string().optional(),
-  anidbId: z.number().optional(),
-  season: z.number().optional(),
-  sceneSeason: z.number().optional(),
+  alias: MatchedAlias,
 });
 
 /**
@@ -408,8 +407,7 @@ export const resolvePage = internalQuery({
   returns: zodToConvex(z.object({ results: z.array(ResolveResult), runtimes: z.array(z.object({ unitId: zid('units'), runtimeMin: z.number().optional() })) })),
   handler: async (ctx, { workId, items }) => {
     const results = [];
-    for (const item of items)
-      results.push(await resolveUnits(ctx, workId, item.episodes, item.airDate, { anidbId: item.anidbId, season: item.season, sceneSeason: item.sceneSeason }));
+    for (const item of items) results.push(await resolveUnits(ctx, workId, item.episodes, item.airDate, item.alias));
     const runtimes = [];
     for (const unitId of new Set(results.flatMap((result) => result.unitIds))) {
       const meta = await ctx.db

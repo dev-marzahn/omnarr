@@ -43,7 +43,7 @@ export async function evaluatePage(
           workId: context.work.id,
           items: matched.map((i) => {
             const title = titles[i] as Extract<TitleMatch, { ok: true }>;
-            return { episodes: parsed[i]!.episodes, airDate: parsed[i]!.airDate, anidbId: title.anidbId, season: title.season, sceneSeason: title.sceneSeason };
+            return { episodes: parsed[i]!.episodes, airDate: parsed[i]!.airDate, alias: title.alias };
           }),
         });
   const runtime = new Map(runtimes.map((entry) => [entry.unitId, entry.runtimeMin]));

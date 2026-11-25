@@ -1,7 +1,7 @@
 // RSS: the dispatch cron, the per-page Work lookup
 // and the record mutation, which creates one `rss` SearchAttempt per matched
 // Work and picks in the same mutation.
-import { IndexerItem, ParsedRelease, protocolOf, ReleaseProfileContent, ResolveResult, TargetFormat } from '@omnarr/contracts';
+import { IndexerItem, type MatchedAlias, ParsedRelease, protocolOf, ReleaseProfileContent, ResolveResult, TargetFormat } from '@omnarr/contracts';
 import { normalizeTitle, titleSides } from '@omnarr/parser';
 import { filterWorks, matchTitle, splitSeasonMark, type WorkForMatch } from '@omnarr/scoring';
 import { zid, zodToConvex, zodToConvexFields } from 'convex-helpers/server/zod4';
@@ -140,12 +140,12 @@ export const matchPage = internalQuery({
       // A dual title (`中文名 / English Title`) that finds none: each side is looked up.
       if (byTitle.length === 0) for (const side of titleSides(parsed.title)) byTitle = [...byTitle, ...(await byName(normalizeTitle(side)))];
       const ids = [...new Set([...byTitle, ...(await worksByIds(ctx, item, parsed.episodes.length > 0 || parsed.pack ? 'series' : 'movie'))])];
-      const candidates: { work: z.infer<typeof WorkForSearch>; doc: Doc<'works'>; anidbId?: number; season?: number; sceneSeason?: number }[] = [];
+      const candidates: { work: z.infer<typeof WorkForSearch>; doc: Doc<'works'>; alias: MatchedAlias }[] = [];
       for (const workId of ids) {
         const entry = await view(workId);
         if (!entry) continue;
         const title = matchTitle(parsed, item, asMatchWork(entry.view));
-        if (title.ok) candidates.push({ work: entry.view, doc: entry.doc, anidbId: title.anidbId, season: title.season, sceneSeason: title.sceneSeason });
+        if (title.ok) candidates.push({ work: entry.view, doc: entry.doc, alias: title.alias });
       }
       const kept = filterWorks(
         candidates.map((c) => asMatchWork(c.work)),
@@ -154,11 +154,7 @@ export const matchPage = internalQuery({
       );
       if (kept.length !== 1) continue;
       const chosen = candidates.find((c) => asMatchWork(c.work) === kept[0])!;
-      const resolved = await resolveUnits(ctx, chosen.doc._id, parsed.episodes, parsed.airDate, {
-        anidbId: chosen.anidbId,
-        season: chosen.season,
-        sceneSeason: chosen.sceneSeason,
-      });
+      const resolved = await resolveUnits(ctx, chosen.doc._id, parsed.episodes, parsed.airDate, chosen.alias);
       if (resolved.problem) continue;
       // RSS matches upgradeable Units like wanted ones.
       const profile = await ctx.db.get(chosen.doc.releaseProfileId);

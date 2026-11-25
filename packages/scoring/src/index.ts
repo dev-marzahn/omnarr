@@ -10,7 +10,6 @@ export {
   type MatchResult,
   matchUnits,
   type ResolveResult,
-  type SeasonName,
   splitSeasonMark,
   splitSeasonName,
   type TitleMatch,

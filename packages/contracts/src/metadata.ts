@@ -43,6 +43,23 @@ export type Confidence = z.infer<typeof Confidence>;
 export const ResolveOrdering = z.enum(['tmdb', 'tvdb', 'scene', 'absolute']);
 export type ResolveOrdering = z.infer<typeof ResolveOrdering>;
 
+export const SeasonName = z.object({ season: z.number(), name: z.string(), normalized: z.string(), sceneSeason: z.number().optional() });
+export type SeasonName = z.infer<typeof SeasonName>;
+
+export const SeasonNameForMatch = SeasonName.omit({ name: true });
+export type SeasonNameForMatch = z.infer<typeof SeasonNameForMatch>;
+
+export const PartSeasonOrdering = z.enum(['scene', 'tmdb']);
+export type PartSeasonOrdering = z.infer<typeof PartSeasonOrdering>;
+
+export const MatchedAlias = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('plain') }),
+  z.object({ kind: z.literal('anidb'), anidbId: z.number() }),
+  z.object({ kind: z.literal('namedSeason'), season: z.number() }),
+  z.object({ kind: z.literal('partSeason'), season: z.number(), ordering: PartSeasonOrdering }),
+]);
+export type MatchedAlias = z.infer<typeof MatchedAlias>;
+
 export const ResolveProblem = z.enum(['ambiguous', 'notFound', 'schemeMismatch']);
 export type ResolveProblem = z.infer<typeof ResolveProblem>;
 

@@ -148,7 +148,7 @@ export async function applySnapshot(ctx: ActionCtx, workId: Id<'works'>, snapsho
       ? undefined
       : xemEntries === undefined
         ? input.seasonNames
-        : seasonNames({ seasons: snapshot.seasons ?? [], sceneSeasons: sceneSeasonsByTmdbSeason(snapshot.units, projection.rows), titles: tmdbTitles });
+        : seasonNames({ seasons: snapshot.seasons ?? [], xemSceneSeasons: sceneSeasonsByTmdbSeason(snapshot.units, projection.rows), titles: tmdbTitles });
   const fields: WorkFields = {
     seasonNames: named,
     title: snapshot.title,
