@@ -6,8 +6,8 @@ import { v } from 'convex/values';
 
 import { internal } from '../_generated/api';
 import { internalAction } from '../_generated/server';
+import { sha256 } from '../lib/sha256';
 import { userAgent } from '../lib/userAgent';
-import { sha256 } from './animeListsParse';
 import { parseSceneMappings } from './sceneMappingsParse';
 
 export const SCENE_MAPPINGS_URL = 'https://services.sonarr.tv/v1/scenemapping';
@@ -57,7 +57,7 @@ export const fetchSceneMappings = internalAction({
         changed.push(...(await ctx.runMutation(internal.mapping.sources.writeSceneMappings, { version, batch: entries.slice(i, i + BATCH) })));
       for (;;) {
         const page = await ctx.runMutation(internal.mapping.sources.deleteStaleSceneMappings, { version });
-        changed.push(...page.tvdbIds);
+        changed.push(...page.ids);
         if (page.done) break;
       }
       await ctx.runMutation(internal.mapping.sources.recordSourceFetch, { source: 'sceneMapping', version, changedTvdbIds: changed });

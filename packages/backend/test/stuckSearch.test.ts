@@ -10,6 +10,7 @@ import jojoPartsNames from './fixtures/xem/jojoPartsNames.json';
 import jojoPartsShape from './fixtures/xem/jojoPartsShape.json';
 import {
   asAdmin,
+  fetchXem,
   seedAnimeLists,
   seedLibraries,
   seedIndexer,
@@ -111,6 +112,7 @@ async function steelBallRunWhoseEpisodeSearchSendsThreeNyaaRequests(): Promise<S
     xem: { shows: { 7700009: { all: jojoPartsShape, names: jojoPartsNames } } },
     indexers: { 'nyaa.fake': nyaaWithOtherSearches },
   });
+  await fetchXem(t);
   await seedNyaa(t);
   const releaseProfileId = await t.run((ctx) => ctx.db.insert('releaseProfiles', shippedProfile('anime-1080p')));
   const { workId } = await admin.action(api.api.library.subscribe, {

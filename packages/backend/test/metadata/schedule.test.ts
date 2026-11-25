@@ -92,7 +92,7 @@ describe('metadata.tick and metadataPool', () => {
       sources: (await ctx.db.query('mappingSourceState').collect()).map((row) => row.source).sort(),
     }));
     expect(settings).toEqual([expect.objectContaining({ language: 'en-US' })]);
-    expect(sources).toEqual(['animeLists', 'sceneMapping', 'xem']);
+    expect(sources).toEqual(['animeLists', 'sceneMapping', 'xem', 'xemNames']);
   });
 
   test('a new Work waits an hour before its first sync', async () => {
@@ -105,6 +105,8 @@ describe('metadata.tick and metadataPool', () => {
 
   test('enqueues each due Work once, skips one whose sync is in the pool, and clears the mark when it is done', async () => {
     const { workId } = await subscribe();
+    await t.mutation(internal.metadata.schedule.tick, {});
+    await runPool();
     await makeDue(workId);
     const before = detailCalls();
     await t.mutation(internal.metadata.schedule.tick, {});

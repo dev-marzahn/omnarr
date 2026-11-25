@@ -26,7 +26,7 @@ import blackLagoonShape from '../fixtures/xem/blackLagoonShape.json';
 import jojoPartsNames from '../fixtures/xem/jojoPartsNames.json';
 import jojoPartsShape from '../fixtures/xem/jojoPartsShape.json';
 import partial from '../fixtures/xem/partial.json';
-import { asAdmin, seedAnimeLists, seedLibraries, seedXemList, setup, useMetadataFakes, type Backend, type Libraries } from '../setup';
+import { asAdmin, fetchXem, seedAnimeLists, seedLibraries, seedXemList, setup, useMetadataFakes, type Backend, type Libraries } from '../setup';
 
 let t: Backend;
 let admin: Awaited<ReturnType<typeof asAdmin>>;
@@ -162,7 +162,8 @@ describe('subscribe to an anime with Anime-Lists entries', () => {
 describe('scene numbering differs from TMDB', () => {
   test('links XEM by absolute position when TVDB has one season of 24 and TMDB two of 12 (rule 3)', async () => {
     await seedXemList(t, [7700003]);
-    useMetadataFakes({ xem: { shows: { 7700003: { all: blackLagoonShape, names: { result: 'success', data: { all: { en: ['Northbound'] } } } } } } });
+    useMetadataFakes({ xem: { shows: { 7700003: { all: blackLagoonShape, names: [{ Northbound: -1 }] } } } });
+    await fetchXem(t);
     const { workId } = await subscribe('900003', [1, 2]);
     const { mappings, aliases, metadata } = await stored(workId);
     expect(mappings.filter((m) => m.ordering === 'scene' && m.unit === 'S2E1')).toEqual([
@@ -182,6 +183,41 @@ describe('scene numbering differs from TMDB', () => {
     const { mappings, metadata } = await stored(workId);
     expect(mappings.filter((m) => m.source === 'xem')).toEqual([]);
     expect(metadata).toMatchObject({ mappingStatus: 'partial', mappingNotes: ['XEM lists 23 regular episodes, TMDB 24; XEM numbers are not linked.'] });
+  });
+});
+
+describe("XEM's names in a sync", () => {
+  const xemAliases = (workId: Id<'works'>) =>
+    t.run(async (ctx) =>
+      (
+        await ctx.db
+          .query('workAliases')
+          .withIndex('by_work', (q) => q.eq('workId', workId))
+          .collect()
+      )
+        .filter((alias) => alias.source === 'xem')
+        .map(({ title, sceneSeason }) => ({ title, sceneSeason })),
+    );
+
+  test("a sync asks XEM only for the Work's map and takes its names from the daily fetch, each with its scene season", async () => {
+    const requests = useMetadataFakes({ series: [...SERIES, jojoParts()], xem: { shows: { 7700009: { all: jojoPartsShape, names: jojoPartsNames } } } });
+    await fetchXem(t);
+    requests.length = 0;
+    const { workId } = await subscribe('900009', [5, 6]);
+    expect(requests.filter((url) => url.hostname === 'thexem.info').map((url) => url.pathname)).toEqual(['/map/all']);
+    expect(await xemAliases(workId)).toEqual(
+      expect.arrayContaining([
+        { title: "JoJo's Bizarre Adventure - Stone Ocean", sceneSeason: 5 },
+        { title: "JoJo's Bizarre Adventure (2012)", sceneSeason: undefined },
+      ]),
+    );
+  });
+
+  test('a Work XEM has a map for but no names gets no XEM aliases', async () => {
+    useMetadataFakes({ xem: { shows: { 7700003: { all: blackLagoonShape } } } });
+    await fetchXem(t);
+    const { workId } = await subscribe('900003', [1, 2]);
+    expect(await xemAliases(workId)).toEqual([]);
   });
 });
 
@@ -322,7 +358,8 @@ describe('sync failures and limits', () => {
 
   test('a XEM timeout keeps the xem rows, XEM aliases and status, with a note', async () => {
     await seedXemList(t, [7700003]);
-    useMetadataFakes({ xem: { shows: { 7700003: { all: blackLagoonShape, names: { result: 'success', data: { all: { en: ['Northbound'] } } } } } } });
+    useMetadataFakes({ xem: { shows: { 7700003: { all: blackLagoonShape, names: [{ Northbound: -1 }] } } } });
+    await fetchXem(t);
     const { workId } = await subscribe('900003', [1, 2]);
     const before = await stored(workId);
     useMetadataFakes({ xem: { down: true } });
@@ -343,6 +380,7 @@ describe('sync failures and limits', () => {
     };
     await seedXemList(t, [7700009]);
     useMetadataFakes({ series: [...SERIES, jojoParts()], xem: { shows: { 7700009: { all: season6AsScene7, names: jojoPartsNames } } } });
+    await fetchXem(t);
     const { workId } = await subscribe('900009', [5, 6]);
     const before = (await stored(workId)).metadata?.seasonNames;
     expect(before).toContainEqual(expect.objectContaining({ season: 6, sceneSeason: 7 }));

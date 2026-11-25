@@ -21,6 +21,7 @@ import missingSeasonShape from './fixtures/xem/missingSeasonShape.json';
 import { pipelineHarness, release } from './harness';
 import {
   asAdmin,
+  fetchXem,
   INDEXER_KEY,
   seedAnimeLists,
   seedIndexer,
@@ -179,6 +180,7 @@ describe('resolveFiles', () => {
   test("the matched alias's scene season is passed: a Stone Ocean `- 01` file imports as S5E1, not unitNotFound", async () => {
     await seedXemList(t, [7700009]);
     useMetadataFakes({ series: [...SERIES, jojoParts()], xem: { shows: { 7700009: { all: jojoPartsShape, names: jojoPartsNames } } } });
+    await fetchXem(t);
     const { workId } = await admin.action(api.api.library.subscribe, {
       tmdbId: '900009',
       kind: 'series',

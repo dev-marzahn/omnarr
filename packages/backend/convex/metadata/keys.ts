@@ -19,6 +19,7 @@ const HOUR = 60 * 60 * 1000;
 export const UNAVAILABLE_AFTER: Record<MetadataSourceName, number> = {
   tmdb: 24 * HOUR,
   xem: 7 * 24 * HOUR,
+  xemNames: 7 * 24 * HOUR,
   animeLists: 7 * 24 * HOUR,
   sceneMapping: 7 * 24 * HOUR,
 };
@@ -29,7 +30,10 @@ export const settingsRow = (ctx: QueryCtx) => ctx.db.query('metadataSettings').f
 export async function ensureSettings(ctx: MutationCtx): Promise<Doc<'metadataSettings'>> {
   const row = await settingsRow(ctx);
   if (row) return row;
-  const id = await ctx.db.insert('metadataSettings', { language: DEFAULT_LANGUAGE, sourceHealth: { tmdb: {}, xem: {}, animeLists: {}, sceneMapping: {} } });
+  const id = await ctx.db.insert('metadataSettings', {
+    language: DEFAULT_LANGUAGE,
+    sourceHealth: { tmdb: {}, xem: {}, xemNames: {}, animeLists: {}, sceneMapping: {} },
+  });
   return (await ctx.db.get(id))!;
 }
 
@@ -74,6 +78,7 @@ export const clearUserToken = internalMutation({
 export const SOURCE_LABEL: Record<MetadataSourceName, string> = {
   tmdb: 'TMDB',
   xem: 'TheXEM',
+  xemNames: 'TheXEM names',
   animeLists: 'Anime-Lists',
   sceneMapping: 'Sonarr scene mappings',
 };

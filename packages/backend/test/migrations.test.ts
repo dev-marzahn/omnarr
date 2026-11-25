@@ -13,7 +13,7 @@ import { findWorksByTitle, resolveUnits } from '../convex/metadata/resolve';
 import schema from '../convex/schema';
 import jojoPartsNames from './fixtures/xem/jojoPartsNames.json';
 import jojoPartsShape from './fixtures/xem/jojoPartsShape.json';
-import { asAdmin, drainPool, modules, seedLibraries, seedXemList, setup, useFetchFakes } from './setup';
+import { asAdmin, drainPool, fetchXem, modules, seedLibraries, seedXemList, setup, useFetchFakes } from './setup';
 
 test('0001: blocklist rows get the title key of the current rule, so a blocklisted spelling still blocks the other', async () => {
   const t = setup();
@@ -83,6 +83,7 @@ describe('0003: Works with XEM aliases sync again, so the aliases get their scen
     const { series: libraryId, releaseProfileId } = await seedLibraries(t);
     await seedXemList(t, [7700009]);
     useFetchFakes({ series: [...SERIES, jojoParts()], xem: { shows: { 7700009: { all: jojoPartsShape, names: jojoPartsNames } } } });
+    await fetchXem(t);
     const subscribe = (tmdbId: string, numberingScheme: 'anime' | 'standard') =>
       admin.action(api.api.library.subscribe, { tmdbId, kind: 'series', libraryId, releaseProfileId, seasons: [], numberingScheme });
     const { workId } = await subscribe('900009', 'anime');

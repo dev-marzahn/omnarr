@@ -8,7 +8,7 @@ import { internal } from '../_generated/api';
 import type { Id } from '../_generated/dataModel';
 import { internalAction, type ActionCtx } from '../_generated/server';
 import { chooseTvdbId, entriesStartingAtAbsoluteOne, projectMappings, type MappingRow, type Projection } from '../mapping/project';
-import { fetchShow, type XemEntry, type XemName } from '../mapping/xem';
+import { fetchShow, type XemEntry } from '../mapping/xem';
 import { withProvider } from './keys';
 import { aliasList, seasonNames, selectAbsoluteOrder, suggestNumbering } from './numbering';
 import type { WorkMetadata } from './provider';
@@ -92,16 +92,13 @@ export async function applySnapshot(ctx: ActionCtx, workId: Id<'works'>, snapsho
   const now = Date.now();
   const notes: string[] = [];
 
-  // XEM: a failure keeps the Work's existing xem rows and XEM aliases.
   let xemEntries: XemEntry[] | undefined = [];
-  let xemNames: XemName[] | undefined = [];
   if (input.inXem) {
     try {
-      ({ entries: xemEntries, names: xemNames } = await fetchShow(input.tvdbId!));
+      xemEntries = await fetchShow(input.tvdbId!);
       await ctx.runMutation(internal.metadata.keys.recordHealth, { source: 'xem', outcome: 'success', at: now });
     } catch {
       xemEntries = undefined;
-      xemNames = undefined;
       notes.push('XEM could not be reached; its numbers are from the last successful fetch.');
       await ctx.runMutation(internal.metadata.keys.recordHealth, { source: 'xem', outcome: 'failure', at: now });
     }
@@ -175,7 +172,7 @@ export async function applySnapshot(ctx: ActionCtx, workId: Id<'works'>, snapsho
   const aliases = aliasList({
     tmdbTitles,
     animeLists: input.animeListEntries.map(({ anidbId, name }) => ({ anidbId, name, startsAtAbsoluteOne: starting.has(anidbId) })),
-    xemNames: xemNames ?? [],
+    xemNames: input.xemNames ?? [],
     sceneMappings: input.sceneMappings,
     seasonNames: fields.seasonNames,
   });
@@ -185,7 +182,7 @@ export async function applySnapshot(ctx: ActionCtx, workId: Id<'works'>, snapsho
       workId,
       version,
       cursor,
-      keepXem: { rows: xemEntries === undefined, aliases: xemNames === undefined },
+      keepXem: { rows: xemEntries === undefined, aliases: input.xemNames === undefined },
       aliases,
       fields,
     });

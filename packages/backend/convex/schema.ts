@@ -94,6 +94,7 @@ import { v } from 'convex/values';
 
 import { AnimeListEntry } from './mapping/animeListsParse';
 import { SceneMappingEntry } from './mapping/sceneMappingsParse';
+import { XemShowNames } from './mapping/xemNamesParse';
 
 const protocol = v.union(v.literal('usenet'), v.literal('torrent'));
 
@@ -578,7 +579,13 @@ export default defineSchema({
     userTokenCheckedAt: v.optional(v.number()),
     language: v.string(),
     // `sceneMapping` is optional: rows written before the source have none.
-    sourceHealth: v.object({ tmdb: sourceHealth, xem: sourceHealth, animeLists: sourceHealth, sceneMapping: v.optional(sourceHealth) }),
+    sourceHealth: v.object({
+      tmdb: sourceHealth,
+      xem: sourceHealth,
+      xemNames: v.optional(sourceHealth),
+      animeLists: sourceHealth,
+      sceneMapping: v.optional(sourceHealth),
+    }),
   }),
 
   workMetadata: defineTable({
@@ -654,6 +661,13 @@ export default defineSchema({
     lastAttemptAt: v.optional(v.number()),
     xemTvdbIds: v.optional(v.array(v.number())),
   }).index('by_source', ['source']),
+
+  xemNames: defineTable({
+    ...zodToConvexFields(XemShowNames.shape),
+    seenVersion: v.string(),
+  })
+    .index('by_tvdb', ['tvdbId'])
+    .index('by_seen_version', ['seenVersion']),
 
   animeListEntries: defineTable({
     ...zodToConvexFields(AnimeListEntry.shape),

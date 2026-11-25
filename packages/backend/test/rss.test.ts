@@ -13,6 +13,7 @@ import jojoPartsNames from './fixtures/xem/jojoPartsNames.json';
 import jojoPartsShape from './fixtures/xem/jojoPartsShape.json';
 import {
   asAdmin,
+  fetchXem,
   INDEXER_KEY,
   seedAnimeLists,
   seedIndexer,
@@ -222,6 +223,7 @@ describe('an RSS item without IDs whose title differs from an alias', () => {
     await seedXemList(t, [7700009]);
     const animeProfile = await t.run((ctx) => ctx.db.insert('releaseProfiles', shippedProfile('anime-1080p')));
     useFetchFakes({ series: [...SERIES, jojoParts()], xem: { shows: { 7700009: { all: jojoPartsShape, names: jojoPartsNames } } } });
+    await fetchXem(t);
     const { workId } = await admin.action(api.api.library.subscribe, {
       tmdbId: '900009',
       kind: 'series',
@@ -241,6 +243,7 @@ describe('an RSS item without IDs whose title differs from an alias', () => {
     await seedXemList(t, [7700009]);
     const animeProfile = await t.run((ctx) => ctx.db.insert('releaseProfiles', shippedProfile('anime-1080p')));
     useFetchFakes({ series: [...SERIES, jojoParts()], xem: { shows: { 7700009: { all: jojoPartsShape, names: jojoPartsNames } } } });
+    await fetchXem(t);
     const { workId } = await admin.action(api.api.library.subscribe, {
       tmdbId: '900009',
       kind: 'series',

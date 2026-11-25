@@ -3,11 +3,11 @@
 // Anime-Lists behind fakes.
 import type { IndexerItem, MatchedAlias, ResolveOrdering } from '@omnarr/contracts';
 import { attackOnTitan as attackOnTitanSeries, emberRite as emberRiteSeries, jojoParts, SERIES } from '@omnarr/e2e/fakes/tmdb/fixtures';
-import { parseRelease } from '@omnarr/parser';
+import { compactTitle, normalizeTitle, parseRelease } from '@omnarr/parser';
 import { matchTitle } from '@omnarr/scoring';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vite-plus/test';
 
-import { api } from '../../convex/_generated/api';
+import { api, internal } from '../../convex/_generated/api';
 import type { Id } from '../../convex/_generated/dataModel';
 import { findWorksByTitle, resolveUnits, searchKeys } from '../../convex/metadata/resolve';
 import { workForSearch } from '../../convex/pipeline/search';
@@ -16,7 +16,7 @@ import blackLagoonShape from '../fixtures/xem/blackLagoonShape.json';
 import jojoPartsNames from '../fixtures/xem/jojoPartsNames.json';
 import jojoPartsShape from '../fixtures/xem/jojoPartsShape.json';
 import missingSeasonShape from '../fixtures/xem/missingSeasonShape.json';
-import { asAdmin, seedAnimeLists, seedLibraries, seedXemList, setup, useMetadataFakes, type Backend, type Libraries } from '../setup';
+import { asAdmin, fetchXem, seedAnimeLists, seedLibraries, seedXemList, setup, useMetadataFakes, type Backend, type Libraries } from '../setup';
 
 let t: Backend;
 let admin: Awaited<ReturnType<typeof asAdmin>>;
@@ -390,6 +390,7 @@ describe('a season-numbered anime release on a Work TMDB merged into one season'
 async function jojo() {
   await seedXemList(t, [7700009]);
   useMetadataFakes({ series: [...SERIES, jojoParts()], xem: { shows: { 7700009: { all: jojoPartsShape, names: jojoPartsNames } } } });
+  await fetchXem(t);
   return (
     await admin.action(api.api.library.subscribe, {
       tmdbId: '900009',
@@ -403,6 +404,27 @@ async function jojo() {
 }
 
 describe('a part named by its XEM season name', () => {
+  test("an alias row stored before XEM's names came from allNames still reads its number in its scene season, and syncs keep it until allNames first succeeds", async () => {
+    await seedXemList(t, [7700009]);
+    useMetadataFakes({ series: [...SERIES, jojoParts()], xem: { shows: { 7700009: { all: jojoPartsShape } } } });
+    const { workId } = await admin.action(api.api.library.subscribe, {
+      tmdbId: '900009',
+      kind: 'series',
+      libraryId: libraries.series,
+      releaseProfileId: libraries.releaseProfileId,
+      seasons: [5, 6],
+      numberingScheme: 'anime',
+    });
+    const title = "JoJo's Bizarre Adventure - Stone Ocean";
+    const normalized = normalizeTitle(title);
+    await t.run((ctx) => ctx.db.insert('workAliases', { workId, title, normalized, compact: compactTitle(normalized), source: 'xem', sceneSeason: 5 }));
+    await t.action(internal.metadata.sync.syncWork, { workId });
+    expect(await matchAndResolve(workId, '[SubsPlease] JoJos Bizarre Adventure - Stone Ocean - 01 (1080p)')).toMatchObject({
+      labels: ['S5E1'],
+      via: { ordering: 'scene', source: 'xem' },
+    });
+  });
+
   test.each([
     ['[SubsPlease] JoJos Bizarre Adventure - Stone Ocean - 01 (1080p)', 'S5E1'],
     ['[Erai-raws] JoJo no Kimyou na Bouken-Steel Ball Run-01', 'S6E1'],
@@ -607,8 +629,9 @@ describe('a part named by its XEM season name', () => {
     await seedXemList(t, [7700009]);
     useMetadataFakes({
       series: [...SERIES, jojoParts()],
-      xem: { shows: { 7700009: { all: { result: 'success', data: [] }, names: { result: 'success', data: { 6: { en: ['JoJo Kimyou Part Six'] } } } } } },
+      xem: { shows: { 7700009: { all: { result: 'success', data: [] }, names: [{ 'JoJo Kimyou Part Six': 6 }] } } },
     });
+    await fetchXem(t);
     const { workId } = await admin.action(api.api.library.subscribe, {
       tmdbId: '900009',
       kind: 'series',
@@ -644,16 +667,13 @@ async function attackOnTitan(xem: 'whole' | 'split') {
       return { scene, tvdb: { season: s.season_number, episode: e.episode_number, absolute } };
     }),
   );
-  const names = {
-    result: 'success',
-    data: {
-      all: { ja: ['Shingeki no Kyojin'] },
-      ...(xem === 'split' ? { 4: { ja: ['Shingeki no Kyojin: The Final Season'] }, 5: { ja: ['Shingeki no Kyojin: The Final Season Part 2'] } } : {}),
-    },
-    message: '',
-  };
+  const names = [
+    { 'Shingeki no Kyojin': -1 },
+    ...(xem === 'split' ? [{ 'Shingeki no Kyojin: The Final Season': 4 }, { 'Shingeki no Kyojin: The Final Season Part 2': 5 }] : []),
+  ];
   await seedXemList(t, [7700010]);
   useMetadataFakes({ series: [...SERIES, series], xem: { shows: { 7700010: { all: { result: 'success', data, message: '' }, names } } } });
+  await fetchXem(t);
   return (
     await admin.action(api.api.library.subscribe, {
       tmdbId: '900010',

@@ -1,11 +1,11 @@
-// TheXEM client. Every request uses `origin=tvdb`. Responses are parsed
-// with the schemas here; `result: failure` means "not in XEM", never an
-// error.
 import { v } from 'convex/values';
 import { z } from 'zod';
 
 import { internal } from '../_generated/api';
 import { internalAction } from '../_generated/server';
+import { fetchCappedText } from '../lib/fetchCappedText';
+import { resyncInBatches, storeList } from './listStore';
+import { parseAllNames } from './xemNamesParse';
 
 const XemNumber = z.object({ season: z.number(), episode: z.number(), absolute: z.number().optional() });
 export type XemNumber = z.infer<typeof XemNumber>;
@@ -25,33 +25,6 @@ export function parseMapAll(json: unknown): XemEntry[] {
   return data.flatMap((entry) => (entry.tvdb ? [{ tvdb: entry.tvdb, scene: entry.scene, scene2: entry.scene_2 }] : []));
 }
 
-/** `/map/names`: `{ <season or 'all'>: { <language>: names[] } }`; undocumented. */
-const MapNames = z.object({
-  result: z.enum(['success', 'failure']),
-  data: z.union([z.record(z.string(), z.record(z.string(), z.array(z.string()))), z.array(z.never())]),
-});
-
-/** A name XEM lists for the show, with the scene season it lists the name under, if only one. */
-export type XemName = { title: string; sceneSeason?: number };
-
-/**
- * Every name XEM lists for the show, once each. A name listed under one
- * scene season only (a part's name, `… - Stone Ocean`) keeps that season;
- * one under `all` or several seasons has none.
- */
-export function parseNames(json: unknown): XemName[] {
-  const { result, data } = MapNames.parse(json);
-  if (result === 'failure' || Array.isArray(data)) return [];
-  const seasons = new Map<string, Set<string>>();
-  for (const [season, byLanguage] of Object.entries(data))
-    for (const title of Object.values(byLanguage).flat()) seasons.set(title, (seasons.get(title) ?? new Set()).add(season));
-  return [...seasons].map(([title, keys]) => {
-    const [only] = keys;
-    const season = keys.size === 1 && /^\d+$/.test(only!) ? Number(only) : undefined;
-    return season === undefined ? { title } : { title, sceneSeason: season };
-  });
-}
-
 /** `/map/havemap?origin=tvdb`: the TVDB IDs XEM has a mapping for, as strings. */
 const Havemap = z.object({ result: z.enum(['success', 'failure']), data: z.array(z.union([z.string(), z.number()])) });
 
@@ -62,46 +35,24 @@ export function parseHavemap(json: unknown): number[] {
 }
 
 export const XEM_URL = 'https://thexem.info';
-const TIMEOUT_MS = 10_000;
+const SHOW_TIMEOUT_MS = 10_000;
+const ALL_NAMES_TIMEOUT_MS = 60_000;
+const SHOWS_PER_WRITE = 200;
 
-/** GETs a XEM endpoint as JSON, with the 10 s timeout. Throws on a network error, a timeout or a non-2xx answer. */
-async function getJson(path: string, query: Record<string, string>): Promise<unknown> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
-  try {
-    const response = await fetch(`${XEM_URL}${path}?${new URLSearchParams(query)}`, { signal: controller.signal });
-    if (!response.ok) throw new Error(`XEM ${path} answered ${response.status}.`);
-    return await response.json();
-  } catch (error) {
-    throw error instanceof Error && error.message.startsWith('XEM ') ? error : new Error(`XEM ${path} could not be reached.`);
-  } finally {
-    clearTimeout(timer);
-  }
+const getBody = (path: string, query: Record<string, string>, timeoutMs: number): Promise<string> =>
+  fetchCappedText(`${XEM_URL}${path}?${new URLSearchParams(query)}`, { label: `XEM ${path}`, timeoutMs });
+
+const getJson = async (path: string, query: Record<string, string>): Promise<unknown> => JSON.parse(await getBody(path, query, SHOW_TIMEOUT_MS));
+
+export async function fetchShow(tvdbId: number): Promise<XemEntry[]> {
+  return parseMapAll(await getJson('/map/all', { id: String(tvdbId), origin: 'tvdb' }));
 }
 
-/**
- * One show's map and names. A failed map fails the fetch;
- * failed names leave `names` absent, and the Work keeps its XEM aliases.
- */
-export async function fetchShow(tvdbId: number): Promise<{ entries: XemEntry[]; names?: XemName[] }> {
-  const query = { id: String(tvdbId), origin: 'tvdb' };
-  const entries = parseMapAll(await getJson('/map/all', query));
-  try {
-    return { entries, names: parseNames(await getJson('/map/names', query)) };
-  } catch {
-    return { entries };
-  }
-}
-
-/**
- * The daily `havemap` fetch, a metadataPool job: stores XEM's TVDB ID
- * list, with its fetch time as the version, and syncs the Works whose TVDB
- * ID entered it. A failure counts toward XEM's health and fails the job.
- */
 export const fetchHavemap = internalAction({
   args: {},
   returns: v.null(),
   handler: async (ctx): Promise<null> => {
+    const state = await ctx.runQuery(internal.mapping.sources.sourceState, { source: 'xem' });
     let xemTvdbIds: number[];
     try {
       xemTvdbIds = parseHavemap(await getJson('/map/havemap', { origin: 'tvdb' }));
@@ -110,6 +61,34 @@ export const fetchHavemap = internalAction({
       throw error;
     }
     await ctx.runMutation(internal.mapping.sources.recordSourceFetch, { source: 'xem', version: new Date().toISOString(), xemTvdbIds });
+    const known = new Set(state.xemTvdbIds ?? []);
+    await resyncInBatches(
+      xemTvdbIds.filter((tvdbId) => !known.has(tvdbId)),
+      (tvdbIds) => ctx.runMutation(internal.mapping.sources.resyncChangedWorks, { tvdbIds }),
+    );
+    return null;
+  },
+});
+
+export const fetchXemNames = internalAction({
+  args: {},
+  returns: v.null(),
+  handler: async (ctx): Promise<null> => {
+    const state = await ctx.runQuery(internal.mapping.sources.sourceState, { source: 'xemNames' });
+    try {
+      const body = await getBody('/map/allNames', { origin: 'tvdb', seasonNumbers: '1' }, ALL_NAMES_TIMEOUT_MS);
+      await storeList(body, state.version, {
+        parse: (text) => parseAllNames(JSON.parse(text)),
+        batchSize: SHOWS_PER_WRITE,
+        writeBatch: (version, batch) => ctx.runMutation(internal.mapping.sources.writeXemNames, { version, batch }),
+        deleteStalePage: (version) => ctx.runMutation(internal.mapping.sources.deleteStaleXemNames, { version }),
+        recordFetch: (version) => ctx.runMutation(internal.mapping.sources.recordSourceFetch, { source: 'xemNames', version }),
+        resync: (tvdbIds) => ctx.runMutation(internal.mapping.sources.resyncChangedWorks, { tvdbIds }),
+      });
+    } catch (error) {
+      await ctx.runMutation(internal.mapping.sources.recordSourceFailure, { source: 'xemNames' });
+      throw error;
+    }
     return null;
   },
 });

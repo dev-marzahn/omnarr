@@ -2,8 +2,7 @@
 // then batched writes of Units, mapping rows and the Work's own rows. Every
 // write first checks that the Work still exists, so a sync racing a Work's
 // deletion writes nothing.
-import { AliasSource, MappingStatus, NumberingReason, NumberingScheme, Ordering, UnitKind } from '@omnarr/contracts';
-import { SeasonName } from '@omnarr/contracts';
+import { AliasSource, type MappingSourceName, MappingStatus, NumberingReason, NumberingScheme, Ordering, SeasonName, UnitKind } from '@omnarr/contracts';
 import { compactTitle } from '@omnarr/parser';
 import { zid, zodToConvex, zodToConvexFields } from 'convex-helpers/server/zod4';
 import { z } from 'zod';
@@ -15,6 +14,7 @@ import { appendEvent } from '../lib/events';
 import { unitsRetitled } from '../library/naming';
 import { AnimeListEntry } from '../mapping/animeListsParse';
 import { chooseTvdbId } from '../mapping/project';
+import { XemName } from '../mapping/xemNamesParse';
 import { startSearch } from '../pipeline/search';
 import { UnitMetadata } from './provider';
 
@@ -57,6 +57,7 @@ export const SnapshotInput = z.object({
   inXem: z.boolean(),
   /** Sonarr's scene-mapping names for that TVDB ID, as stored by the last good fetch. */
   sceneMappings: z.array(z.string()),
+  xemNames: z.array(XemName).optional(),
 });
 export type SnapshotInput = z.infer<typeof SnapshotInput>;
 
@@ -134,7 +135,7 @@ export const snapshotInput = internalQuery({
         : [];
     const animeListEntries = entries.map(({ _id, _creationTime, seenVersion: _seen, ...entry }) => entry);
     const { tvdbId } = work.kind === 'series' ? chooseTvdbId(tmdbTvdbId, animeListEntries) : {};
-    const source = (name: 'xem' | 'animeLists') =>
+    const source = (name: MappingSourceName) =>
       ctx.db
         .query('mappingSourceState')
         .withIndex('by_source', (q) => q.eq('source', name))
@@ -148,6 +149,9 @@ export const snapshotInput = internalQuery({
             .query('sceneMappings')
             .withIndex('by_tvdb', (q) => q.eq('tvdbId', tvdbId))
             .collect();
+
+    const inXem = tvdbId !== undefined && (xem?.xemTvdbIds ?? []).includes(tvdbId);
+    const xemNames = inXem ? await storedXemNames(ctx, await source('xemNames'), tvdbId) : [];
 
     return {
       kind: work.kind,
@@ -165,11 +169,21 @@ export const snapshotInput = internalQuery({
       animeListEntries,
       animeListsVersion: animeLists?.version,
       tvdbId,
-      inXem: tvdbId !== undefined && (xem?.xemTvdbIds ?? []).includes(tvdbId),
+      inXem,
       sceneMappings: sceneMappings.map((row) => row.title),
+      xemNames,
     };
   },
 });
+
+async function storedXemNames(ctx: QueryCtx, namesSource: Doc<'mappingSourceState'> | null, tvdbId: number): Promise<XemName[] | undefined> {
+  if (namesSource?.version === undefined) return undefined;
+  const row = await ctx.db
+    .query('xemNames')
+    .withIndex('by_tvdb', (q) => q.eq('tvdbId', tvdbId))
+    .unique();
+  return row?.names ?? [];
+}
 
 /** The TMDB ID and kind a sync looks a Work up by; null once the Work is gone. */
 export const workRef = internalQuery({

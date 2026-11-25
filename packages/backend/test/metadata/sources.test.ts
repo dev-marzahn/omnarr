@@ -6,7 +6,7 @@ import { api, internal } from '../../convex/_generated/api';
 import type { Id } from '../../convex/_generated/dataModel';
 import xml from '../fixtures/animeLists/anime-list.xml?raw';
 import blackLagoonShape from '../fixtures/xem/blackLagoonShape.json';
-import { asAdmin, drainPool, seedLibraries, setup, useMetadataFakes, type Backend, type FakeRequests, type Libraries } from '../setup';
+import { asAdmin, drainPool, fetchXem, seedLibraries, setup, useMetadataFakes, type Backend, type FakeRequests, type Libraries } from '../setup';
 
 const HOUR = 60 * 60 * 1000;
 const DAY = 24 * HOUR;
@@ -75,7 +75,11 @@ describe('the first tick', () => {
     vi.advanceTimersByTime(2 * HOUR);
     await t.mutation(internal.metadata.schedule.tick, {});
     await runPool();
-    expect(requests.filter((url) => url.hostname !== 'tmdb.fake').length).toBe(6);
+    const daily = ['raw.githubusercontent.com', 'services.sonarr.tv/v1/scenemapping', 'thexem.info/map/allNames', 'thexem.info/map/havemap'];
+    const sourceRequests = requests
+      .filter((url) => url.hostname !== 'tmdb.fake')
+      .map((url) => (url.hostname === 'raw.githubusercontent.com' ? url.hostname : `${url.hostname}${url.pathname}`));
+    expect(sourceRequests.sort()).toEqual([...daily, ...daily].sort());
   });
 });
 
@@ -138,6 +142,190 @@ describe('the XEM havemap fetch', () => {
     expect(scene).toHaveLength(24);
     await fetchHavemap();
     expect(await syncing(workId)).toBe(false);
+  });
+});
+
+describe("XEM's names, the xemNames source", () => {
+  const xemAliases = (workId: Id<'works'>) =>
+    t.run(async (ctx) =>
+      (
+        await ctx.db
+          .query('workAliases')
+          .withIndex('by_work', (q) => q.eq('workId', workId))
+          .collect()
+      )
+        .filter((alias) => alias.source === 'xem')
+        .map(({ title, sceneSeason }) => ({ title, sceneSeason })),
+    );
+  const storedNames = () =>
+    t.run(async (ctx) => (await ctx.db.query('xemNames').collect()).map(({ tvdbId, names, seenVersion }) => ({ tvdbId, names, seenVersion })));
+  const namesVersion = () =>
+    t.run(
+      async (ctx) =>
+        (
+          await ctx.db
+            .query('mappingSourceState')
+            .withIndex('by_source', (q) => q.eq('source', 'xemNames'))
+            .unique()
+        )?.version,
+    );
+  const fetchXemNames = () => t.action(internal.mapping.xem.fetchXemNames, {});
+  const fetchBoth = () => fetchXem(t);
+  const health = async (name: 'xem' | 'xemNames') => (await admin.query(api.api.metadata.settings, {})).sources.find((s) => s.name === name)!;
+  const northbound = (names: unknown[]) => ({ 7700003: { all: blackLagoonShape, names } });
+  const harbour = (names: unknown[]) => ({ 7700001: { all: { result: 'failure', data: [], message: 'no show found' }, names } });
+
+  test('asks for allNames with seasonNumbers once per run, and a subscribed Work gets the names with their scene seasons', async () => {
+    const fakes = useMetadataFakes({ xem: { shows: northbound([{ Northbound: -1 }, { 'Northbound Signal': 2 }]) } });
+    await fetchBoth();
+    expect(fakes.filter((url) => url.pathname === '/map/allNames').map((url) => url.searchParams.toString())).toEqual(['origin=tvdb&seasonNumbers=1']);
+    const { workId } = await subscribe('900003');
+    await runPool();
+    expect(await xemAliases(workId)).toEqual([
+      { title: 'Northbound Signal', sceneSeason: 2 },
+      { title: 'Northbound', sceneSeason: undefined },
+    ]);
+  });
+
+  test('the same answer again writes nothing and syncs no Work', async () => {
+    useMetadataFakes({ xem: { shows: northbound([{ Northbound: -1 }]) } });
+    await fetchBoth();
+    const { workId } = await subscribe('900003');
+    await runPool();
+    const before = await storedNames();
+    await fetchXemNames();
+    expect(await storedNames()).toEqual(before);
+    expect(await syncing(workId)).toBe(false);
+  });
+
+  test('a changed answer syncs only the Works whose names changed, and a show it drops loses its names', async () => {
+    useMetadataFakes({ xem: { shows: { ...northbound([{ Northbound: -1 }]), ...harbour([{ 'Harbour Lights JP': -1 }]) } } });
+    await fetchBoth();
+    const harbourWork = await subscribe('900001');
+    const northboundWork = await subscribe('900003');
+    await runPool();
+    useMetadataFakes({ xem: { havemap: [7700001, 7700003], shows: { ...northbound([{ 'Northbound Signal': 2 }]), 7700001: harbour([])[7700001] } } });
+    await fetchXemNames();
+    expect(await syncing(northboundWork.workId)).toBe(true);
+    expect(await syncing(harbourWork.workId)).toBe(true);
+    await runPool();
+    expect(await xemAliases(northboundWork.workId)).toEqual([{ title: 'Northbound Signal', sceneSeason: 2 }]);
+    expect(await xemAliases(harbourWork.workId)).toEqual([]);
+    expect((await storedNames()).map((row) => row.tvdbId).sort((a, b) => a - b)).toEqual([7700003, 7799999]);
+
+    useMetadataFakes({ xem: { havemap: [7700001, 7700003], shows: { ...northbound([{ 'Northbound Signal': 2 }, { 'Northbound Again': -1 }]) } } });
+    await fetchXemNames();
+    expect(await syncing(northboundWork.workId)).toBe(true);
+    expect(await syncing(harbourWork.workId)).toBe(false);
+  });
+
+  test.each([
+    ['a failure envelope', { allNames: { result: 'failure', data: [], message: 'no show found' } }],
+    ['an empty object', { allNames: { result: 'success', data: {}, message: '' } }],
+    ['an empty list', { allNames: { result: 'success', data: [], message: '' } }],
+    ['no show with a usable name', { allNames: { result: 'success', data: { 7700003: [{ '': -1 }] }, message: '' } }],
+    ['a timeout', { namesDown: true }],
+    ['an error status', { allNames: new Response('busy', { status: 503 }) }],
+    [
+      'a body over 16 MB',
+      {
+        allNames: new Response(JSON.stringify({ result: 'success', data: { 7700003: [{ 'Northbound Renamed': -1 }] }, message: '' }), {
+          headers: { 'content-length': String(17 * 1024 * 1024) },
+        }),
+      },
+    ],
+    [
+      'valid JSON over 16 MB with no length header',
+      {
+        allNames: new Response(
+          JSON.stringify({ result: 'success', data: { 7700003: [{ 'Northbound Renamed': -1 }] }, message: '' }) + ' '.repeat(16 * 1024 * 1024),
+        ),
+      },
+    ],
+  ])(
+    "%s keeps every stored name and the version, counts toward the names' health, which a Work's sync does not clear, and fails the job",
+    async (_case, answer) => {
+      useMetadataFakes({ xem: { shows: northbound([{ Northbound: -1 }]) } });
+      await fetchBoth();
+      const { workId } = await subscribe('900003');
+      await runPool();
+      const names = await storedNames();
+      const version = await namesVersion();
+      useMetadataFakes({ xem: { shows: northbound([{ Northbound: -1 }]), ...answer } });
+      await expect(fetchXemNames()).rejects.toThrow();
+      expect(await storedNames()).toEqual(names);
+      expect(await namesVersion()).toBe(version);
+      expect((await health('xemNames')).firstFailureAt).toEqual(expect.any(Number));
+      await admin.mutation(api.api.metadata.syncNow, { workId });
+      await runPool();
+      expect(await xemAliases(workId)).toEqual([{ title: 'Northbound', sceneSeason: undefined }]);
+      expect((await health('xem')).firstFailureAt).toBeUndefined();
+      expect((await health('xemNames')).firstFailureAt).toEqual(expect.any(Number));
+    },
+  );
+
+  test('while allNames is down, the havemap is still stored and a show that entered it syncs', async () => {
+    useMetadataFakes({ xem: { havemap: [], namesDown: true } });
+    const { workId } = await subscribe('900003');
+    await runPool();
+    useMetadataFakes({ xem: { shows: northbound([{ Northbound: -1 }]), namesDown: true } });
+    await fetchHavemap();
+    await expect(fetchXemNames()).rejects.toThrow();
+    expect(await syncing(workId)).toBe(true);
+    await runPool();
+    const scene = await t.run((ctx) =>
+      ctx.db
+        .query('unitMappings')
+        .withIndex('by_ordering', (q) => q.eq('workId', workId).eq('ordering', 'scene'))
+        .collect(),
+    );
+    expect(scene).toHaveLength(24);
+  });
+
+  test('seven days of allNames failures open the Issue for TheXEM names, which havemap and map successes leave open and an allNames success resolves', async () => {
+    useMetadataFakes({ xem: { shows: northbound([{ Northbound: -1 }]) } });
+    await fetchBoth();
+    const { workId } = await subscribe('900003');
+    await runPool();
+    useMetadataFakes({ xem: { shows: northbound([{ Northbound: -1 }]), namesDown: true } });
+    await expect(fetchXemNames()).rejects.toThrow();
+    vi.advanceTimersByTime(6 * DAY);
+    await expect(fetchXemNames()).rejects.toThrow();
+    expect(await openIssues()).toEqual([]);
+
+    vi.advanceTimersByTime(DAY + 60_000);
+    await expect(fetchXemNames()).rejects.toThrow();
+    const issue = { failureCode: 'metadataSourceUnavailable', fixActions: ['retryNow'], detail: 'Not reachable: TheXEM names.' };
+    expect(await openIssues()).toEqual([issue]);
+    await fetchHavemap();
+    await admin.mutation(api.api.metadata.syncNow, { workId });
+    await runPool();
+    expect((await health('xem')).lastSuccessAt).toEqual(expect.any(Number));
+    expect(await openIssues()).toEqual([issue]);
+
+    useMetadataFakes({ xem: { shows: northbound([{ Northbound: -1 }]) } });
+    await fetchXemNames();
+    expect(await openIssues()).toEqual([]);
+  });
+
+  test('a first fetch that changes thousands of shows resyncs the Works it names', async () => {
+    const { workId } = await subscribe('900003');
+    await runPool();
+    const others = Object.fromEntries(Array.from({ length: 3000 }, (_, i) => [7800000 + i, [{ [`Other Show ${i}`]: -1 }]]));
+    useMetadataFakes({ xem: { havemap: [7700003], allNames: { result: 'success', data: { ...others, 7700003: [{ Northbound: -1 }] }, message: '' } } });
+    await fetchHavemap();
+    await runPool();
+    await fetchXemNames();
+    expect(await storedNames()).toHaveLength(3001);
+    expect(await syncing(workId)).toBe(true);
+    await runPool();
+    expect(await xemAliases(workId)).toEqual([{ title: 'Northbound', sceneSeason: undefined }]);
+  });
+
+  test('one show in a bad shape is skipped, and the rest are stored', async () => {
+    useMetadataFakes({ xem: { allNames: { result: 'success', data: { 7700003: [{ Northbound: -1 }], 7700001: 'not a list' }, message: '' } } });
+    await fetchXemNames();
+    expect((await storedNames()).map(({ tvdbId, names }) => ({ tvdbId, names }))).toEqual([{ tvdbId: 7700003, names: [{ title: 'Northbound' }] }]);
   });
 });
 

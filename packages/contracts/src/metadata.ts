@@ -20,11 +20,11 @@ export const AliasSource = z.enum(['tmdb', 'animeLists', 'xem', 'sceneMapping', 
 export type AliasSource = z.infer<typeof AliasSource>;
 
 /** The community mapping sources, each with a `mappingSourceState` row; `sceneMapping` is Sonarr's scene-mapping list. */
-export const MappingSourceName = z.enum(['animeLists', 'xem', 'sceneMapping']);
+export const MappingSourceName = z.enum(['animeLists', 'xem', 'xemNames', 'sceneMapping']);
 export type MappingSourceName = z.infer<typeof MappingSourceName>;
 
 /** The outside sources whose health `metadataSettings.sourceHealth` tracks. */
-export const MetadataSourceName = z.enum(['tmdb', 'xem', 'animeLists', 'sceneMapping']);
+export const MetadataSourceName = z.enum(['tmdb', 'xem', 'xemNames', 'animeLists', 'sceneMapping']);
 export type MetadataSourceName = z.infer<typeof MetadataSourceName>;
 
 /** Why a numbering scheme is suggested: an Anime-Lists entry, TMDB's genre and origin, or neither. */

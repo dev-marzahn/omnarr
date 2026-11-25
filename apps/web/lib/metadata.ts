@@ -34,6 +34,7 @@ export const MAPPING_SOURCE: Record<MappingSource, string> = { tmdb: 'TMDB', tvd
 export const SOURCE_NAME: Record<MetadataSettingsRow['sources'][number]['name'], string> = {
   tmdb: 'TMDB',
   xem: 'TheXEM',
+  xemNames: 'TheXEM names',
   animeLists: 'Anime-Lists',
   sceneMapping: 'Sonarr scene mappings',
 };
