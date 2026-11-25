@@ -1,6 +1,6 @@
 // TMDB tokens and the health of the metadata sources. The user
 // token lives only in `metadataSettings.userApiToken`, which no DTO returns.
-import { MetadataSourceName } from '@omnarr/contracts';
+import { JOBS_OF_SOURCE, MetadataSourceName, ShownSourceName, SOURCE_LABEL, type SourceHealth } from '@omnarr/contracts';
 import { zodToConvex, zodToConvexFields } from 'convex-helpers/server/zod4';
 import { ConvexError } from 'convex/values';
 import { z } from 'zod';
@@ -16,10 +16,9 @@ export const DEFAULT_LANGUAGE = 'en-US';
 
 const HOUR = 60 * 60 * 1000;
 /** How long a source may fail with no success before `metadataSourceUnavailable` opens. */
-export const UNAVAILABLE_AFTER: Record<MetadataSourceName, number> = {
+export const UNAVAILABLE_AFTER: Record<ShownSourceName, number> = {
   tmdb: 24 * HOUR,
   xem: 7 * 24 * HOUR,
-  xemNames: 7 * 24 * HOUR,
   animeLists: 7 * 24 * HOUR,
   sceneMapping: 7 * 24 * HOUR,
 };
@@ -75,13 +74,20 @@ export const clearUserToken = internalMutation({
   },
 });
 
-export const SOURCE_LABEL: Record<MetadataSourceName, string> = {
-  tmdb: 'TMDB',
-  xem: 'TheXEM',
-  xemNames: 'TheXEM names',
-  animeLists: 'Anime-Lists',
-  sceneMapping: 'Sonarr scene mappings',
-};
+export type ShownHealth = SourceHealth & { stalestJob: MetadataSourceName };
+
+const successOrNever = (health: SourceHealth) => health.lastSuccessAt ?? -Infinity;
+
+function shownHealth(jobs: (SourceHealth & { job: MetadataSourceName })[]): ShownHealth {
+  const stalest = jobs.reduce((older, job) => (successOrNever(job) < successOrNever(older) ? job : older));
+  const failures = jobs.flatMap(({ firstFailureAt }) => (firstFailureAt === undefined ? [] : [firstFailureAt]));
+  return { firstFailureAt: failures.length ? Math.min(...failures) : undefined, lastSuccessAt: stalest.lastSuccessAt, stalestJob: stalest.job };
+}
+
+export function shownSourceHealth(sourceHealth: Partial<Record<MetadataSourceName, SourceHealth>>): Record<ShownSourceName, ShownHealth> {
+  const jobsOf = (shown: ShownSourceName) => JOBS_OF_SOURCE[shown].map((job) => ({ job, ...sourceHealth[job] }));
+  return Object.fromEntries(ShownSourceName.options.map((shown) => [shown, shownHealth(jobsOf(shown))])) as Record<ShownSourceName, ShownHealth>;
+}
 
 const REJECTED_DETAIL = {
   user: 'TMDB rejected your token. Enter a new one.',
@@ -114,9 +120,9 @@ export async function recordHealthIn(ctx: MutationCtx, { source, outcome, at, to
   if (outcome === 'rejected') await raiseIssue(ctx, { code: 'metadataKeyRejected', detail: REJECTED_DETAIL[tokenSource ?? 'deployment'] });
 
   // One Issue for every source past its limit; it resolves once none is.
-  const all = { ...settings.sourceHealth, [source]: next };
-  const overdue = MetadataSourceName.options.filter((name) => {
-    const since = all[name]?.firstFailureAt;
+  const shown = shownSourceHealth({ ...settings.sourceHealth, [source]: next });
+  const overdue = ShownSourceName.options.filter((name) => {
+    const since = shown[name].firstFailureAt;
     return since !== undefined && at - since >= UNAVAILABLE_AFTER[name];
   });
   if (overdue.length)

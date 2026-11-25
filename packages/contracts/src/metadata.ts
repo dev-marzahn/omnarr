@@ -27,6 +27,26 @@ export type MappingSourceName = z.infer<typeof MappingSourceName>;
 export const MetadataSourceName = z.enum(['tmdb', 'xem', 'xemNames', 'animeLists', 'sceneMapping']);
 export type MetadataSourceName = z.infer<typeof MetadataSourceName>;
 
+export const ShownSourceName = z.enum(['tmdb', 'xem', 'animeLists', 'sceneMapping']);
+export type ShownSourceName = z.infer<typeof ShownSourceName>;
+
+export const JOBS_OF_SOURCE: Record<ShownSourceName, readonly [MetadataSourceName, ...MetadataSourceName[]]> = {
+  tmdb: ['tmdb'],
+  xem: ['xem', 'xemNames'],
+  animeLists: ['animeLists'],
+  sceneMapping: ['sceneMapping'],
+};
+
+export const SOURCE_LABEL: Record<ShownSourceName, string> = {
+  tmdb: 'TMDB',
+  xem: 'TheXEM',
+  animeLists: 'Anime-Lists',
+  sceneMapping: 'Sonarr scene mappings',
+};
+
+export const SourceHealth = z.object({ firstFailureAt: z.number().optional(), lastSuccessAt: z.number().optional() });
+export type SourceHealth = z.infer<typeof SourceHealth>;
+
 /** Why a numbering scheme is suggested: an Anime-Lists entry, TMDB's genre and origin, or neither. */
 export const NumberingReason = z.enum(['animeLists', 'genreOrigin', 'none']);
 export type NumberingReason = z.infer<typeof NumberingReason>;

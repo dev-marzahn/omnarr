@@ -8,11 +8,11 @@ import {
   MetadataSearchRequest,
   MetadataSearchResult,
   MetadataSettingsRow,
-  MetadataSourceName,
   RemoveAliasRequest,
   RemoveManualMappingRequest,
   SetManualMappingRequest,
   SetNumberingSchemeRequest,
+  ShownSourceName,
   UnitMappingRow,
   UnitRequest,
   WorkMetadataRow,
@@ -29,7 +29,7 @@ import { z } from 'zod';
 import { internal } from '../_generated/api';
 import { adminAction, adminMutation, adminQuery } from '../lib/functions';
 import { posterDataUri } from '../metadata/images';
-import { DEFAULT_LANGUAGE, settingsRow, withProvider } from '../metadata/keys';
+import { DEFAULT_LANGUAGE, settingsRow, shownSourceHealth, withProvider } from '../metadata/keys';
 import { suggestNumbering } from '../metadata/numbering';
 import { enqueueSync } from '../metadata/pool';
 import { metadataProvider, requireWork } from '../metadata/provider';
@@ -162,15 +162,15 @@ export const settings = adminQuery({
   handler: async (ctx): Promise<MetadataSettingsRow> => {
     const row = await settingsRow(ctx);
     const states = await ctx.db.query('mappingSourceState').collect();
+    const health = shownSourceHealth(row?.sourceHealth ?? {});
     return {
       tokenSource: row?.userApiToken ? 'user' : 'deployment',
       userTokenCheckedAt: row?.userApiToken ? row.userTokenCheckedAt : undefined,
       language: row?.language ?? DEFAULT_LANGUAGE,
-      sources: MetadataSourceName.options.map((name) => ({
-        name,
-        version: states.find((state) => state.source === name)?.version,
-        ...row?.sourceHealth[name],
-      })),
+      sources: ShownSourceName.options.map((name) => {
+        const { stalestJob, ...shown } = health[name];
+        return { name, version: states.find((state) => state.source === stalestJob)?.version, ...shown };
+      }),
     };
   },
 });

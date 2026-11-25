@@ -161,19 +161,21 @@ describe("XEM's names, the xemNames source", () => {
     );
   const storedNames = () =>
     t.run(async (ctx) => (await ctx.db.query('xemNames').collect()).map(({ tvdbId, names, seenVersion }) => ({ tvdbId, names, seenVersion })));
-  const namesVersion = () =>
+  const versionOf = (source: 'xem' | 'xemNames') =>
     t.run(
       async (ctx) =>
         (
           await ctx.db
             .query('mappingSourceState')
-            .withIndex('by_source', (q) => q.eq('source', 'xemNames'))
+            .withIndex('by_source', (q) => q.eq('source', source))
             .unique()
         )?.version,
     );
+  const namesVersion = () => versionOf('xemNames');
   const fetchXemNames = () => t.action(internal.mapping.xem.fetchXemNames, {});
   const fetchBoth = () => fetchXem(t);
-  const health = async (name: 'xem' | 'xemNames') => (await admin.query(api.api.metadata.settings, {})).sources.find((s) => s.name === name)!;
+  const health = (job: 'xem' | 'xemNames') => t.run(async (ctx) => (await ctx.db.query('metadataSettings').first())!.sourceHealth[job]!);
+  const shownXem = async () => (await admin.query(api.api.metadata.settings, {})).sources.find((s) => s.name === 'xem')!;
   const northbound = (names: unknown[]) => ({ 7700003: { all: blackLagoonShape, names } });
   const harbour = (names: unknown[]) => ({ 7700001: { all: { result: 'failure', data: [], message: 'no show found' }, names } });
 
@@ -284,7 +286,58 @@ describe("XEM's names, the xemNames source", () => {
     expect(scene).toHaveLength(24);
   });
 
-  test('seven days of allNames failures open the Issue for TheXEM names, which havemap and map successes leave open and an allNames success resolves', async () => {
+  test("Settings shows one TheXEM with the stalest job's success and version: healthy when both jobs are, failing while allNames is down", async () => {
+    const havemapVersion = () => versionOf('xem');
+    useMetadataFakes({ xem: { shows: northbound([{ Northbound: -1 }]) } });
+    await fetchHavemap();
+    const havemapSuccess = (await health('xem')).lastSuccessAt;
+    vi.advanceTimersByTime(HOUR);
+    await fetchXemNames();
+    expect((await admin.query(api.api.metadata.settings, {})).sources.map((s) => s.name)).toEqual(['tmdb', 'xem', 'animeLists', 'sceneMapping']);
+    expect(await shownXem()).toEqual({ name: 'xem', version: await havemapVersion(), lastSuccessAt: havemapSuccess });
+
+    vi.advanceTimersByTime(DAY);
+    const namesSuccess = (await health('xemNames')).lastSuccessAt;
+    useMetadataFakes({ xem: { shows: northbound([{ Northbound: -1 }]), namesDown: true } });
+    await fetchHavemap();
+    await expect(fetchXemNames()).rejects.toThrow();
+    expect(await shownXem()).toEqual({
+      name: 'xem',
+      version: await namesVersion(),
+      firstFailureAt: (await health('xemNames')).firstFailureAt,
+      lastSuccessAt: namesSuccess,
+    });
+  });
+
+  test('Settings shows TheXEM failing since the earlier of the two failures', async () => {
+    useMetadataFakes({ xem: { down: true, namesDown: true } });
+    await expect(fetchHavemap()).rejects.toThrow();
+    const havemapFailure = (await health('xem')).firstFailureAt!;
+    vi.advanceTimersByTime(HOUR);
+    await expect(fetchXemNames()).rejects.toThrow();
+    expect((await health('xemNames')).firstFailureAt).toBeGreaterThan(havemapFailure);
+    expect((await shownXem()).firstFailureAt).toBe(havemapFailure);
+  });
+
+  test('both XEM jobs failing for seven days open one Issue for TheXEM, which stays open until both succeed', async () => {
+    useMetadataFakes({ xem: { down: true, namesDown: true } });
+    await expect(fetchHavemap()).rejects.toThrow();
+    await expect(fetchXemNames()).rejects.toThrow();
+    vi.advanceTimersByTime(7 * DAY + 60_000);
+    await expect(fetchHavemap()).rejects.toThrow();
+    await expect(fetchXemNames()).rejects.toThrow();
+    const issue = { failureCode: 'metadataSourceUnavailable', fixActions: ['retryNow'], detail: 'Not reachable: TheXEM.' };
+    expect(await openIssues()).toEqual([issue]);
+
+    useMetadataFakes({ xem: { namesDown: true } });
+    await fetchHavemap();
+    expect(await openIssues()).toEqual([issue]);
+    useMetadataFakes();
+    await fetchXemNames();
+    expect(await openIssues()).toEqual([]);
+  });
+
+  test('seven days of allNames failures open the Issue for TheXEM, which havemap and map successes leave open and an allNames success resolves', async () => {
     useMetadataFakes({ xem: { shows: northbound([{ Northbound: -1 }]) } });
     await fetchBoth();
     const { workId } = await subscribe('900003');
@@ -297,7 +350,7 @@ describe("XEM's names, the xemNames source", () => {
 
     vi.advanceTimersByTime(DAY + 60_000);
     await expect(fetchXemNames()).rejects.toThrow();
-    const issue = { failureCode: 'metadataSourceUnavailable', fixActions: ['retryNow'], detail: 'Not reachable: TheXEM names.' };
+    const issue = { failureCode: 'metadataSourceUnavailable', fixActions: ['retryNow'], detail: 'Not reachable: TheXEM.' };
     expect(await openIssues()).toEqual([issue]);
     await fetchHavemap();
     await admin.mutation(api.api.metadata.syncNow, { workId });

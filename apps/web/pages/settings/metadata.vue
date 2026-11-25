@@ -5,8 +5,9 @@
 -->
 <script setup lang="ts">
 import { api } from '@omnarr/backend/api';
+import { SOURCE_LABEL } from '@omnarr/contracts';
 
-import { SOURCE_NAME, sourceHealth } from '~/lib/metadata';
+import { sourceHealth } from '~/lib/metadata';
 import { formatAirDate } from '~/lib/unitStates';
 
 const { data: settings, error } = useQuery(api.api.metadata.settings, {});
@@ -39,7 +40,7 @@ async function test() {
 
 const time = new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit' });
 const when = (at: number) => (Date.now() - at < 86_400_000 ? time.format(at) : `${formatAirDate(at)} ${time.format(at)}`);
-const sources = computed(() => (settings.value?.sources ?? []).map((source) => ({ name: SOURCE_NAME[source.name], ...sourceHealth(source, when) })));
+const sources = computed(() => (settings.value?.sources ?? []).map((source) => ({ name: SOURCE_LABEL[source.name], ...sourceHealth(source, when) })));
 </script>
 
 <template>

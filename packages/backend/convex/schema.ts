@@ -82,6 +82,7 @@ import {
   RenditionState,
   ScoreBreakdown,
   SearchAttemptState,
+  SourceHealth,
   UnitKind,
   ExpectedUnit,
   UnitState,
@@ -100,7 +101,7 @@ import { XemShowNames } from './mapping/xemNamesParse';
 const protocol = v.union(v.literal('usenet'), v.literal('torrent'));
 
 /** One source's health: written only when a value changes. */
-const sourceHealth = v.object({ firstFailureAt: v.optional(v.number()), lastSuccessAt: v.optional(v.number()) });
+const sourceHealth = zodToConvex(SourceHealth);
 
 export default defineSchema({
   // Library and identity
